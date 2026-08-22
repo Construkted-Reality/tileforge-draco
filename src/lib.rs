@@ -1,0 +1,603 @@
+//! Google Draco, for tileforge.
+//!
+//! # Why this crate replaced draco-oxide
+//!
+//! tileforge cuts one model into thousands of tiles and encodes each tile on
+//! its own. Two neighbouring tiles hold the same vertex on their shared edge.
+//! If the two encoders put that vertex in two different places, the render
+//! shows a crack.
+//!
+//! Draco's `GLOBAL_GRID` quantization takes a grid **spacing** instead of a
+//! bit count, and snaps every vertex to a grid anchored at zero. Every tile
+//! therefore shares one lattice. draco-oxide has no such mode, and the
+//! workaround we built for it cost 21 percent more bytes at the same step and
+//! still broke the seam.
+//!
+//! Measured on a 932 tile corpus: with a power-of-two spacing and pre-snapped
+//! input, 279,117 of 279,117 shared vertices stay bit-identical across all
+//! 2,697 touching tile pairs. See
+//! `docs/design/investigations/2026-08-21-draco-cpp-grid-validation.md`.
+//!
+//! # Two rules the measurement produced
+//!
+//! 1. Give [`Quantization::Grid`] a power-of-two spacing. Anything else halves
+//!    the seam agreement and adds a drift of about 0.015 mm that no bit count
+//!    removes. [`snap_positions`] and [`Quantization::grid`] both refuse a
+//!    spacing that is not a power of two.
+//! 2. Call [`snap_positions`] on the vertices first. Without it about 1 shared
+//!    vertex in 5,000 lands one step out. With it, none do, and the output is
+//!    slightly smaller.
+
+mod ffi;
+
+use std::ffi::CStr;
+use std::os::raw::c_char;
+
+const ERR_LEN: usize = 512;
+
+/// What went wrong inside Draco.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DracoError {
+    /// The C entry point's status code.
+    pub code: i32,
+    /// Draco's own message, or ours when the argument check refused first.
+    pub message: String,
+}
+
+impl std::fmt::Display for DracoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "draco error {}: {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for DracoError {}
+
+/// How to quantize positions.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Quantization {
+    /// Snap to a grid of this spacing in metres, anchored at zero. Draco picks
+    /// the bit count. Use this. It is the only mode that keeps two tiles on
+    /// one lattice.
+    Grid { spacing: f32 },
+    /// Fit the mesh's own bounding box into this many bits. Every mesh gets a
+    /// different lattice, so every shared vertex moves. Kept for measurement
+    /// and for a caller that encodes a single whole model.
+    Bits { bits: i32 },
+}
+
+impl Quantization {
+    /// A grid whose spacing is a power of two, which is the only kind that
+    /// decodes exactly.
+    ///
+    /// Draco decodes a position as `origin + index * step`, in 32-bit floats.
+    /// When the spacing is a power of two, and the origin is a multiple of it,
+    /// both the product and the sum are exact and two tiles must agree. When
+    /// it is not, they disagree by about 0.015 mm.
+    pub fn grid(spacing: f32) -> Result<Self, DracoError> {
+        if !is_power_of_two(spacing) {
+            return Err(DracoError {
+                code: 1,
+                message: format!(
+                    "grid spacing {spacing} is not a power of two; \
+                     a spacing that is not exactly representable puts \
+                     neighbouring tiles on different lattices"
+                ),
+            });
+        }
+        Ok(Quantization::Grid { spacing })
+    }
+}
+
+/// True when `v` is a positive, finite power of two.
+pub fn is_power_of_two(v: f32) -> bool {
+    v.is_finite() && v > 0.0 && v.to_bits() & 0x007f_ffff == 0
+}
+
+/// The largest power of two that is not larger than `target`.
+///
+/// Use it to turn a step derived from the data into one that decodes exactly.
+/// It rounds down, never up, so the result is never coarser than asked.
+pub fn power_of_two_at_most(target: f32) -> f32 {
+    assert!(target.is_finite() && target > 0.0, "target must be positive");
+    let mut v = f32::from_bits(target.to_bits() & 0xff80_0000);
+    if v > target {
+        v /= 2.0;
+    }
+    v
+}
+
+/// Rounds every position onto the global grid of `spacing`.
+///
+/// Draco quantizes as `floor((v - origin) / step + 0.5)`. That subtraction
+/// rounds, and two neighbouring tiles have different origins, so a vertex
+/// halfway between two grid points can round up in one tile and down in the
+/// other. Pre-snapping makes the subtraction exact and removes the case.
+///
+/// Measured on corpus E: without this, 35 of 284,462 shared vertices land one
+/// step out. With it, none do, and the corpus is 1,648 bytes smaller.
+pub fn snap_positions(positions: &mut [f32], spacing: f32) -> Result<(), DracoError> {
+    if !is_power_of_two(spacing) {
+        return Err(DracoError {
+            code: 1,
+            message: format!("grid spacing {spacing} is not a power of two"),
+        });
+    }
+    for v in positions.iter_mut() {
+        *v = (*v / spacing + 0.5).floor() * spacing;
+    }
+    Ok(())
+}
+
+/// One mesh on its way into Draco.
+///
+/// `positions` holds 3 floats per vertex and `uvs` holds 2. `indices` holds 3
+/// per triangle.
+#[derive(Debug, Clone, Copy)]
+pub struct MeshView<'a> {
+    pub positions: &'a [f32],
+    pub uvs: Option<&'a [f32]>,
+    pub indices: &'a [u32],
+}
+
+/// Encoder settings.
+#[derive(Debug, Clone, Copy)]
+pub struct EncodeOptions {
+    pub position: Quantization,
+    /// 0 leaves texture coordinates unquantized.
+    pub uv_bits: i32,
+    /// Draco's own scale: 0 is slowest and smallest, 10 is fastest.
+    pub speed: i32,
+}
+
+impl Default for EncodeOptions {
+    fn default() -> Self {
+        Self {
+            position: Quantization::Bits { bits: 14 },
+            uv_bits: 12,
+            speed: 0,
+        }
+    }
+}
+
+/// Compresses one mesh and returns the Draco bitstream.
+pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Vec<u8>, DracoError> {
+    let num_vertices = mesh.positions.len() / 3;
+    if mesh.positions.len() % 3 != 0 {
+        return Err(argument("positions is not a multiple of 3"));
+    }
+    if mesh.indices.len() % 3 != 0 {
+        return Err(argument("indices is not a multiple of 3"));
+    }
+    if num_vertices == 0 || mesh.indices.is_empty() {
+        return Err(argument("mesh has no vertices or no triangles"));
+    }
+    if let Some(uvs) = mesh.uvs {
+        if uvs.len() != num_vertices * 2 {
+            return Err(argument("uvs does not hold two values per vertex"));
+        }
+    }
+    if let Some(&bad) = mesh.indices.iter().find(|&&i| i as usize >= num_vertices) {
+        return Err(argument(&format!(
+            "index {bad} is past the last of {num_vertices} vertices"
+        )));
+    }
+
+    let (position_spacing, position_bits) = match opts.position {
+        Quantization::Grid { spacing } => {
+            if !is_power_of_two(spacing) {
+                return Err(argument(&format!(
+                    "grid spacing {spacing} is not a power of two"
+                )));
+            }
+            (spacing, 0)
+        }
+        Quantization::Bits { bits } => (0.0, bits),
+    };
+
+    let c_mesh = ffi::TfDracoMesh {
+        positions: mesh.positions.as_ptr(),
+        uvs: mesh.uvs.map_or(std::ptr::null(), |u| u.as_ptr()),
+        indices: mesh.indices.as_ptr(),
+        num_vertices: num_vertices as u32,
+        num_faces: (mesh.indices.len() / 3) as u32,
+    };
+    let c_opts = ffi::TfDracoEncodeOptions {
+        position_spacing,
+        position_bits,
+        uv_bits: opts.uv_bits,
+        speed: opts.speed,
+    };
+    let mut out = ffi::TfDracoBuffer {
+        data: std::ptr::null_mut(),
+        len: 0,
+    };
+    let mut err = [0 as c_char; ERR_LEN];
+
+    // SAFETY: every pointer above comes from a live slice that outlives the
+    // call, and `out` and `err` are owned here.
+    let code = unsafe {
+        ffi::tf_draco_encode(&c_mesh, &c_opts, &mut out, err.as_mut_ptr(), ERR_LEN)
+    };
+    if code != ffi::TF_DRACO_OK {
+        return Err(DracoError {
+            code,
+            message: read_err(&err),
+        });
+    }
+
+    // SAFETY: on success the C side handed us `len` initialised bytes.
+    let bytes = unsafe { std::slice::from_raw_parts(out.data, out.len) }.to_vec();
+    // SAFETY: `out` is the buffer the C side allocated and we have copied it.
+    unsafe { ffi::tf_draco_buffer_free(&mut out) };
+    Ok(bytes)
+}
+
+/// A decoded Draco mesh. Frees the C++ object when dropped.
+pub struct DecodedMesh {
+    raw: *mut ffi::TfDracoDecoded,
+}
+
+// SAFETY: the handle owns its C++ object exclusively and the C entry point
+// holds no global state.
+unsafe impl Send for DecodedMesh {}
+
+impl Drop for DecodedMesh {
+    fn drop(&mut self) {
+        // SAFETY: `raw` came from `tf_draco_decode` and is freed once.
+        unsafe { ffi::tf_draco_decoded_free(self.raw) };
+    }
+}
+
+/// What kind of thing an attribute holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttributeType {
+    Position,
+    Normal,
+    Color,
+    TexCoord,
+    Generic,
+}
+
+impl DecodedMesh {
+    pub fn num_points(&self) -> u32 {
+        // SAFETY: `raw` is live for the lifetime of self.
+        unsafe { ffi::tf_draco_decoded_num_points(self.raw) }
+    }
+
+    pub fn num_faces(&self) -> u32 {
+        // SAFETY: as above.
+        unsafe { ffi::tf_draco_decoded_num_faces(self.raw) }
+    }
+
+    /// Triangle indices, three per face.
+    pub fn indices(&self) -> Result<Vec<u32>, DracoError> {
+        let mut out = vec![0u32; self.num_faces() as usize * 3];
+        // SAFETY: `out` holds exactly the count the C side writes.
+        let code = unsafe { ffi::tf_draco_decoded_indices(self.raw, out.as_mut_ptr()) };
+        if code != ffi::TF_DRACO_OK {
+            return Err(DracoError {
+                code,
+                message: "cannot read indices".to_string(),
+            });
+        }
+        Ok(out)
+    }
+
+    /// The type and component count of the attribute with this Draco unique
+    /// id. The `KHR_draco_mesh_compression` extension names attributes by that
+    /// id, so this is how "POSITION" or "TEXCOORD_0" finds its data.
+    pub fn attribute(&self, unique_id: u32) -> Option<(AttributeType, usize)> {
+        let mut kind = 0i32;
+        let mut components = 0i32;
+        // SAFETY: both out parameters are owned here.
+        let code = unsafe {
+            ffi::tf_draco_decoded_attribute(self.raw, unique_id, &mut kind, &mut components)
+        };
+        if code != ffi::TF_DRACO_OK {
+            return None;
+        }
+        let kind = match kind {
+            ffi::TF_DRACO_ATTR_POSITION => AttributeType::Position,
+            ffi::TF_DRACO_ATTR_NORMAL => AttributeType::Normal,
+            ffi::TF_DRACO_ATTR_COLOR => AttributeType::Color,
+            ffi::TF_DRACO_ATTR_TEX_COORD => AttributeType::TexCoord,
+            _ => AttributeType::Generic,
+        };
+        Some((kind, components as usize))
+    }
+
+    /// Reads an attribute as floats, one entry per point, in point order.
+    pub fn read_f32(&self, unique_id: u32) -> Result<Vec<f32>, DracoError> {
+        let components = self.components_or_err(unique_id)?;
+        let mut out = vec![0f32; self.num_points() as usize * components];
+        let mut err = [0 as c_char; ERR_LEN];
+        // SAFETY: `out` holds num_points * components floats, which is what
+        // the C side writes.
+        let code = unsafe {
+            ffi::tf_draco_decoded_read_f32(
+                self.raw,
+                unique_id,
+                out.as_mut_ptr(),
+                err.as_mut_ptr(),
+                ERR_LEN,
+            )
+        };
+        if code != ffi::TF_DRACO_OK {
+            return Err(DracoError {
+                code,
+                message: read_err(&err),
+            });
+        }
+        Ok(out)
+    }
+
+    /// The same, as unsigned 32-bit integers.
+    pub fn read_u32(&self, unique_id: u32) -> Result<Vec<u32>, DracoError> {
+        let components = self.components_or_err(unique_id)?;
+        let mut out = vec![0u32; self.num_points() as usize * components];
+        let mut err = [0 as c_char; ERR_LEN];
+        // SAFETY: as in read_f32.
+        let code = unsafe {
+            ffi::tf_draco_decoded_read_u32(
+                self.raw,
+                unique_id,
+                out.as_mut_ptr(),
+                err.as_mut_ptr(),
+                ERR_LEN,
+            )
+        };
+        if code != ffi::TF_DRACO_OK {
+            return Err(DracoError {
+                code,
+                message: read_err(&err),
+            });
+        }
+        Ok(out)
+    }
+
+    fn components_or_err(&self, unique_id: u32) -> Result<usize, DracoError> {
+        self.attribute(unique_id)
+            .map(|(_, c)| c)
+            .ok_or_else(|| argument(&format!("no attribute with unique id {unique_id}")))
+    }
+}
+
+/// Decompresses a Draco bitstream.
+///
+/// This does not bound the output. A hostile bitstream declares its own vertex
+/// and face counts, and Draco sizes its buffers from them. Check the expansion
+/// ratio before you call this on anything a user supplied.
+pub fn decode(data: &[u8]) -> Result<DecodedMesh, DracoError> {
+    if data.is_empty() {
+        return Err(argument("empty bitstream"));
+    }
+    let mut raw: *mut ffi::TfDracoDecoded = std::ptr::null_mut();
+    let mut err = [0 as c_char; ERR_LEN];
+    // SAFETY: `data` outlives the call, and `raw` and `err` are owned here.
+    let code =
+        unsafe { ffi::tf_draco_decode(data.as_ptr(), data.len(), &mut raw, err.as_mut_ptr(), ERR_LEN) };
+    if code != ffi::TF_DRACO_OK || raw.is_null() {
+        return Err(DracoError {
+            code,
+            message: read_err(&err),
+        });
+    }
+    Ok(DecodedMesh { raw })
+}
+
+fn argument(message: &str) -> DracoError {
+    DracoError {
+        code: 1,
+        message: message.to_string(),
+    }
+}
+
+fn read_err(buf: &[c_char; ERR_LEN]) -> String {
+    // SAFETY: the C side always writes a terminator inside the buffer.
+    unsafe { CStr::from_ptr(buf.as_ptr()) }
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two quads that share an edge at x = 4, in the metre range where the
+    /// Draco option-store defect used to corrupt the grid origin.
+    fn quad(x0: f32, x1: f32) -> (Vec<f32>, Vec<u32>) {
+        let positions = vec![
+            x0, 0.0, 0.0, //
+            x1, 0.0, 0.0, //
+            x1, 1.0, 0.0, //
+            x0, 1.0, 0.0, //
+        ];
+        (positions, vec![0, 1, 2, 0, 2, 3])
+    }
+
+    #[test]
+    fn a_mesh_round_trips() {
+        let (positions, indices) = quad(0.0, 4.0);
+        let bytes = encode(
+            MeshView {
+                positions: &positions,
+                uvs: None,
+                indices: &indices,
+            },
+            &EncodeOptions {
+                position: Quantization::grid(0.00390625).unwrap(),
+                uv_bits: 0,
+                speed: 0,
+            },
+        )
+        .unwrap();
+        assert!(!bytes.is_empty());
+
+        let decoded = decode(&bytes).unwrap();
+        assert_eq!(decoded.num_faces(), 2);
+        let (kind, components) = decoded.attribute(0).unwrap();
+        assert_eq!(kind, AttributeType::Position);
+        assert_eq!(components, 3);
+        assert_eq!(decoded.indices().unwrap().len(), 6);
+        assert_eq!(decoded.read_f32(0).unwrap().len(), decoded.num_points() as usize * 3);
+    }
+
+    #[test]
+    fn neighbouring_tiles_agree_on_a_shared_edge() {
+        // The whole reason this crate exists. Two tiles meet at x = 4. The
+        // vertices on that edge must decode to the same place in both.
+        //
+        // 4 metres matters: it is inside the range where Draco's own option
+        // store used to lose the low bits of the grid origin. See
+        // third_party/draco/CONSTRUKTED-CHANGES.md.
+        let spacing = 0.00390625;
+        let mut left = quad(-3.0, 4.0);
+        let mut right = quad(4.0, 11.0);
+        snap_positions(&mut left.0, spacing).unwrap();
+        snap_positions(&mut right.0, spacing).unwrap();
+
+        let opts = EncodeOptions {
+            position: Quantization::grid(spacing).unwrap(),
+            uv_bits: 0,
+            speed: 0,
+        };
+        let decode_one = |m: &(Vec<f32>, Vec<u32>)| {
+            let bytes = encode(
+                MeshView {
+                    positions: &m.0,
+                    uvs: None,
+                    indices: &m.1,
+                },
+                &opts,
+            )
+            .unwrap();
+            decode(&bytes).unwrap().read_f32(0).unwrap()
+        };
+        let dl = decode_one(&left);
+        let dr = decode_one(&right);
+
+        // Every vertex at x = 4 must be bit-identical in both tiles.
+        let on_seam = |v: &[f32]| -> Vec<[f32; 3]> {
+            let mut out: Vec<[f32; 3]> = v
+                .chunks_exact(3)
+                .filter(|p| p[0] == 4.0)
+                .map(|p| [p[0], p[1], p[2]])
+                .collect();
+            out.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            out.dedup();
+            out
+        };
+        let sl = on_seam(&dl);
+        let sr = on_seam(&dr);
+        assert_eq!(sl.len(), 2, "the left tile lost its seam vertices");
+        assert_eq!(sl, sr, "the two tiles disagree about the shared edge");
+    }
+
+    #[test]
+    fn a_bit_count_moves_the_shared_edge() {
+        // The counterpart. Per-mesh bit quantization gives each tile its own
+        // bounding box, so the same edge lands in two different places. This
+        // is what shipped before, and it is what the grid mode replaces.
+        let left = quad(-3.0, 4.0);
+        let right = quad(4.0, 11.0);
+        let opts = EncodeOptions {
+            position: Quantization::Bits { bits: 11 },
+            uv_bits: 0,
+            speed: 0,
+        };
+        let decode_one = |m: &(Vec<f32>, Vec<u32>)| {
+            let bytes = encode(
+                MeshView {
+                    positions: &m.0,
+                    uvs: None,
+                    indices: &m.1,
+                },
+                &opts,
+            )
+            .unwrap();
+            decode(&bytes).unwrap().read_f32(0).unwrap()
+        };
+        let dl = decode_one(&left);
+        let dr = decode_one(&right);
+        // The left tile's largest x and the right tile's smallest x were the
+        // same number before encoding.
+        let max_x = dl.chunks_exact(3).map(|p| p[0]).fold(f32::MIN, f32::max);
+        let min_x = dr.chunks_exact(3).map(|p| p[0]).fold(f32::MAX, f32::min);
+        assert_ne!(
+            max_x, min_x,
+            "per-mesh quantization is expected to move the shared edge"
+        );
+    }
+
+    #[test]
+    fn a_grid_spacing_must_be_a_power_of_two() {
+        assert!(Quantization::grid(0.003318049).is_err());
+        assert!(Quantization::grid(0.00390625).is_ok());
+        assert!(snap_positions(&mut [1.0], 0.003318049).is_err());
+    }
+
+    #[test]
+    fn power_of_two_at_most_rounds_down() {
+        assert_eq!(power_of_two_at_most(0.003318049), 0.001953125);
+        assert_eq!(power_of_two_at_most(0.00390625), 0.00390625);
+        assert_eq!(power_of_two_at_most(3.0), 2.0);
+        assert!(is_power_of_two(power_of_two_at_most(0.1)));
+    }
+
+    #[test]
+    fn snapping_puts_every_vertex_on_the_grid() {
+        let spacing = 0.00390625;
+        let mut v = vec![4.369245529174805, -49.99343490600586, 0.0007];
+        snap_positions(&mut v, spacing).unwrap();
+        for x in &v {
+            assert_eq!(x / spacing, (x / spacing).round(), "{x} is off the grid");
+        }
+    }
+
+    #[test]
+    fn an_empty_mesh_is_refused_with_a_clear_message() {
+        // Corpus E holds two tiles with vertices and no triangles. Draco says
+        // "All triangles are degenerate", which reads like a geometry fault
+        // and is not one.
+        let err = encode(
+            MeshView {
+                positions: &[0.0, 0.0, 0.0],
+                uvs: None,
+                indices: &[],
+            },
+            &EncodeOptions::default(),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("no vertices or no triangles"), "{err}");
+    }
+
+    #[test]
+    fn an_index_past_the_end_is_refused() {
+        let err = encode(
+            MeshView {
+                positions: &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                uvs: None,
+                indices: &[0, 1, 9],
+            },
+            &EncodeOptions::default(),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("past the last"), "{err}");
+    }
+
+    #[test]
+    fn a_truncated_bitstream_is_refused_rather_than_trusted() {
+        let (positions, indices) = quad(0.0, 4.0);
+        let bytes = encode(
+            MeshView {
+                positions: &positions,
+                uvs: None,
+                indices: &indices,
+            },
+            &EncodeOptions::default(),
+        )
+        .unwrap();
+        assert!(decode(&bytes[..bytes.len() / 2]).is_err());
+        assert!(decode(&[]).is_err());
+    }
+}
