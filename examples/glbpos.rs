@@ -20,7 +20,8 @@ fn main() {
     }
     let glb = std::fs::read(&args[1]).expect("cannot read the GLB");
     let (json, bin) = split_glb(&glb);
-    let doc: serde_json::Value = serde_json::from_slice(json).expect("the JSON chunk does not parse");
+    let doc: serde_json::Value =
+        serde_json::from_slice(json).expect("the JSON chunk does not parse");
 
     let views = doc["bufferViews"].as_array().cloned().unwrap_or_default();
     let mut out: Vec<u8> = Vec::new();

@@ -98,7 +98,10 @@ pub fn is_power_of_two(v: f32) -> bool {
 /// Use it to turn a step derived from the data into one that decodes exactly.
 /// It rounds down, never up, so the result is never coarser than asked.
 pub fn power_of_two_at_most(target: f32) -> f32 {
-    assert!(target.is_finite() && target > 0.0, "target must be positive");
+    assert!(
+        target.is_finite() && target > 0.0,
+        "target must be positive"
+    );
     let mut v = f32::from_bits(target.to_bits() & 0xff80_0000);
     if v > target {
         v /= 2.0;
@@ -516,8 +519,15 @@ pub fn decode(data: &[u8]) -> Result<DecodedMesh, DracoError> {
     let mut raw: *mut ffi::TfDracoDecoded = std::ptr::null_mut();
     let mut err = [0 as c_char; ERR_LEN];
     // SAFETY: `data` outlives the call, and `raw` and `err` are owned here.
-    let code =
-        unsafe { ffi::tf_draco_decode(data.as_ptr(), data.len(), &mut raw, err.as_mut_ptr(), ERR_LEN) };
+    let code = unsafe {
+        ffi::tf_draco_decode(
+            data.as_ptr(),
+            data.len(),
+            &mut raw,
+            err.as_mut_ptr(),
+            ERR_LEN,
+        )
+    };
     if code != ffi::TF_DRACO_OK || raw.is_null() {
         return Err(DracoError {
             code,
@@ -589,7 +599,10 @@ mod tests {
         assert_eq!(kind, AttributeType::Position);
         assert_eq!(components, 3);
         assert_eq!(decoded.indices().unwrap().len(), 6);
-        assert_eq!(decoded.read_f32(0).unwrap().len(), decoded.num_points() as usize * 3);
+        assert_eq!(
+            decoded.read_f32(0).unwrap().len(),
+            decoded.num_points() as usize * 3
+        );
     }
 
     #[test]
@@ -690,12 +703,7 @@ mod tests {
             v.chunks_exact(3)
                 .filter(|p| p[0] > 3.9)
                 .map(|p| p[1])
-                .min_by(|a, b| {
-                    (a - seam_y)
-                        .abs()
-                        .partial_cmp(&(b - seam_y).abs())
-                        .unwrap()
-                })
+                .min_by(|a, b| (a - seam_y).abs().partial_cmp(&(b - seam_y).abs()).unwrap())
                 .unwrap()
         };
         assert_ne!(
@@ -793,7 +801,9 @@ mod tests {
             (AttributeType::Normal, 3),
         ];
         for (id, (kind, components)) in encoded.unique_ids.iter().zip(expected) {
-            let got = decoded.attribute(*id).expect("unique id is not in the bitstream");
+            let got = decoded
+                .attribute(*id)
+                .expect("unique id is not in the bitstream");
             assert_eq!(got, (kind, components), "unique id {id}");
             assert_eq!(
                 decoded.read_f32(*id).unwrap().len(),
@@ -848,12 +858,7 @@ mod tests {
             // Where this tile put the texture coordinate that was at `shared`.
             uv.chunks_exact(2)
                 .map(|c| c[0])
-                .min_by(|a, b| {
-                    (a - shared)
-                        .abs()
-                        .partial_cmp(&(b - shared).abs())
-                        .unwrap()
-                })
+                .min_by(|a, b| (a - shared).abs().partial_cmp(&(b - shared).abs()).unwrap())
                 .unwrap()
         };
 
@@ -887,7 +892,7 @@ mod tests {
     #[test]
     fn an_attribute_of_the_wrong_length_is_refused() {
         let (positions, indices) = quad(0.0, 4.0);
-        let uvs = vec![0.0, 0.0, 1.0, 0.0];  // 2 vertices, not 4
+        let uvs = vec![0.0, 0.0, 1.0, 0.0]; // 2 vertices, not 4
         let err = encode(
             MeshView {
                 attributes: &[

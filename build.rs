@@ -21,7 +21,10 @@ fn main() {
              git submodule update --init --recursive",
         );
 
-    if !draco.join("src/draco/compression/expert_encode.h").is_file() {
+    if !draco
+        .join("src/draco/compression/expert_encode.h")
+        .is_file()
+    {
         panic!(
             "third_party/draco is empty at {}. Run: \
              git submodule update --init --recursive",
@@ -30,7 +33,11 @@ fn main() {
     }
     for sub in ["eigen", "tinygltf", "filesystem"] {
         let path = draco.join("third_party").join(sub);
-        if !path.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false) {
+        if !path
+            .read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false)
+        {
             panic!(
                 "Draco's own submodule {sub} is empty. Run: \
                  git submodule update --init --recursive"
