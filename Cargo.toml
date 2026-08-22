@@ -11,6 +11,10 @@ links = "tileforge_draco"
 
 [dependencies]
 
+[dev-dependencies]
+# The glbpos example reads a GLB's JSON chunk.
+serde_json = { workspace = true }
+
 [build-dependencies]
 cc = { workspace = true }
 cmake = { workspace = true }
