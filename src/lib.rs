@@ -301,6 +301,7 @@ impl DecodedMesh {
             ffi::TF_DRACO_ATTR_NORMAL => AttributeType::Normal,
             ffi::TF_DRACO_ATTR_COLOR => AttributeType::Color,
             ffi::TF_DRACO_ATTR_TEX_COORD => AttributeType::TexCoord,
+            ffi::TF_DRACO_ATTR_GENERIC => AttributeType::Generic,
             _ => AttributeType::Generic,
         };
         Some((kind, components as usize))
@@ -494,14 +495,43 @@ mod tests {
     }
 
     #[test]
-    fn a_bit_count_moves_the_shared_edge() {
+    fn a_bit_count_moves_a_shared_vertex_that_is_not_on_a_corner() {
         // The counterpart. Per-mesh bit quantization gives each tile its own
-        // bounding box, so the same edge lands in two different places. This
-        // is what shipped before, and it is what the grid mode replaces.
-        let left = quad(-3.0, 4.0);
-        let right = quad(4.0, 11.0);
+        // bounding box, so a shared vertex lands in two different places.
+        //
+        // Two things make this harder to show than it looks.
+        //
+        // 1. Draco maps a bounding-box minimum to index 0 and a maximum to
+        //    the last index, so a vertex on a corner of both boxes survives
+        //    even per-mesh quantization. The vertex has to be an interior one.
+        // 2. Draco's range is a single scalar, the largest span over the three
+        //    axes, so the quantization cell is a cube. Two tiles with the same
+        //    largest span therefore get the same step and still agree. The two
+        //    tiles below have different largest spans, 2 and 7.
+        let seam_y = 1.0f32;
+        let left = (
+            vec![
+                2.0, 0.0, 0.0, //
+                4.0, 0.0, 0.0, //
+                4.0, seam_y, 0.0, // on the seam, interior in y for the right tile
+                4.0, 2.0, 0.0, //
+                2.0, 2.0, 0.0, //
+            ],
+            vec![0, 1, 2, 0, 2, 3, 0, 3, 4],
+        );
+        let right = (
+            vec![
+                4.0, 0.0, 0.0, //
+                11.0, 0.0, 0.0, //
+                11.0, 7.0, 0.0, //
+                4.0, 7.0, 0.0, //
+                4.0, seam_y, 0.0, // the same vertex, interior in this tile
+            ],
+            vec![0, 1, 2, 0, 2, 3, 0, 4, 3],
+        );
+
         let opts = EncodeOptions {
-            position: Quantization::Bits { bits: 11 },
+            position: Quantization::Bits { bits: 8 },
             uv_bits: 0,
             speed: 0,
         };
@@ -519,14 +549,70 @@ mod tests {
         };
         let dl = decode_one(&left);
         let dr = decode_one(&right);
-        // The left tile's largest x and the right tile's smallest x were the
-        // same number before encoding.
-        let max_x = dl.chunks_exact(3).map(|p| p[0]).fold(f32::MIN, f32::max);
-        let min_x = dr.chunks_exact(3).map(|p| p[0]).fold(f32::MAX, f32::min);
+
+        // Find where each tile put the vertex that was at (4, seam_y, 0).
+        let nearest_y = |v: &[f32]| -> f32 {
+            v.chunks_exact(3)
+                .filter(|p| p[0] > 3.9)
+                .map(|p| p[1])
+                .min_by(|a, b| {
+                    (a - seam_y)
+                        .abs()
+                        .partial_cmp(&(b - seam_y).abs())
+                        .unwrap()
+                })
+                .unwrap()
+        };
         assert_ne!(
-            max_x, min_x,
-            "per-mesh quantization is expected to move the shared edge"
+            nearest_y(&dl),
+            nearest_y(&dr),
+            "per-mesh quantization is expected to move an interior shared vertex"
         );
+    }
+
+    #[test]
+    fn a_grid_holds_the_same_vertex_that_a_bit_count_moves() {
+        // The same geometry as the test above, on a grid. Both tiles must put
+        // the shared vertex in one place.
+        let spacing = 0.00390625;
+        let seam_y = 1.0f32;
+        let mut left = (
+            vec![
+                2.0, 0.0, 0.0, 4.0, 0.0, 0.0, 4.0, seam_y, 0.0, 4.0, 2.0, 0.0, 2.0, 2.0, 0.0,
+            ],
+            vec![0u32, 1, 2, 0, 2, 3, 0, 3, 4],
+        );
+        let mut right = (
+            vec![
+                4.0, 0.0, 0.0, 11.0, 0.0, 0.0, 11.0, 7.0, 0.0, 4.0, 7.0, 0.0, 4.0, seam_y, 0.0,
+            ],
+            vec![0u32, 1, 2, 0, 2, 3, 0, 4, 3],
+        );
+        snap_positions(&mut left.0, spacing).unwrap();
+        snap_positions(&mut right.0, spacing).unwrap();
+
+        let opts = EncodeOptions {
+            position: Quantization::grid(spacing).unwrap(),
+            uv_bits: 0,
+            speed: 0,
+        };
+        let decode_one = |m: &(Vec<f32>, Vec<u32>)| {
+            let bytes = encode(
+                MeshView {
+                    positions: &m.0,
+                    uvs: None,
+                    indices: &m.1,
+                },
+                &opts,
+            )
+            .unwrap();
+            decode(&bytes).unwrap().read_f32(0).unwrap()
+        };
+        let dl = decode_one(&left);
+        let dr = decode_one(&right);
+        let holds = |v: &[f32]| v.chunks_exact(3).any(|p| p == [4.0, seam_y, 0.0]);
+        assert!(holds(&dl), "the left tile moved the shared vertex");
+        assert!(holds(&dr), "the right tile moved the shared vertex");
     }
 
     #[test]
