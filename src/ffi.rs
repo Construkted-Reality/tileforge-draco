@@ -15,9 +15,17 @@ pub const TF_DRACO_ATTR_TEX_COORD: i32 = 3;
 pub const TF_DRACO_ATTR_GENERIC: i32 = 4;
 
 #[repr(C)]
+pub struct TfDracoAttribute {
+    pub kind: i32,
+    pub num_components: i32,
+    pub quantization_bits: i32,
+    pub data: *const f32,
+}
+
+#[repr(C)]
 pub struct TfDracoMesh {
-    pub positions: *const f32,
-    pub uvs: *const f32,
+    pub attributes: *const TfDracoAttribute,
+    pub num_attributes: u32,
     pub indices: *const u32,
     pub num_vertices: u32,
     pub num_faces: u32,
@@ -26,8 +34,6 @@ pub struct TfDracoMesh {
 #[repr(C)]
 pub struct TfDracoEncodeOptions {
     pub position_spacing: f32,
-    pub position_bits: i32,
-    pub uv_bits: i32,
     pub speed: i32,
 }
 
@@ -48,6 +54,7 @@ unsafe extern "C" {
         mesh: *const TfDracoMesh,
         opts: *const TfDracoEncodeOptions,
         out: *mut TfDracoBuffer,
+        out_unique_ids: *mut u32,
         err: *mut c_char,
         err_len: usize,
     ) -> i32;

@@ -128,23 +128,89 @@ pub fn snap_positions(positions: &mut [f32], spacing: f32) -> Result<(), DracoEr
     Ok(())
 }
 
+/// What kind of thing an attribute holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttributeType {
+    Position,
+    Normal,
+    Color,
+    TexCoord,
+    Generic,
+}
+
+impl AttributeType {
+    fn code(self) -> i32 {
+        match self {
+            AttributeType::Position => ffi::TF_DRACO_ATTR_POSITION,
+            AttributeType::Normal => ffi::TF_DRACO_ATTR_NORMAL,
+            AttributeType::Color => ffi::TF_DRACO_ATTR_COLOR,
+            AttributeType::TexCoord => ffi::TF_DRACO_ATTR_TEX_COORD,
+            AttributeType::Generic => ffi::TF_DRACO_ATTR_GENERIC,
+        }
+    }
+
+    fn from_code(code: i32) -> Self {
+        match code {
+            ffi::TF_DRACO_ATTR_POSITION => AttributeType::Position,
+            ffi::TF_DRACO_ATTR_NORMAL => AttributeType::Normal,
+            ffi::TF_DRACO_ATTR_COLOR => AttributeType::Color,
+            ffi::TF_DRACO_ATTR_TEX_COORD => AttributeType::TexCoord,
+            _ => AttributeType::Generic,
+        }
+    }
+}
+
+/// One vertex attribute on its way into Draco.
+///
+/// `data` holds `components` floats per vertex, tightly packed, in vertex
+/// order. Positions take their quantization from [`EncodeOptions::position`],
+/// so `quantization_bits` is ignored on a position attribute that is on a grid.
+#[derive(Debug, Clone, Copy)]
+pub struct Attribute<'a> {
+    pub kind: AttributeType,
+    pub components: usize,
+    /// 0 leaves the attribute unquantized.
+    pub quantization_bits: i32,
+    pub data: &'a [f32],
+}
+
+impl<'a> Attribute<'a> {
+    /// Positions, three floats per vertex.
+    pub fn positions(data: &'a [f32]) -> Self {
+        Self {
+            kind: AttributeType::Position,
+            components: 3,
+            quantization_bits: 0,
+            data,
+        }
+    }
+
+    /// Texture coordinates, two floats per vertex.
+    pub fn tex_coords(data: &'a [f32], bits: i32) -> Self {
+        Self {
+            kind: AttributeType::TexCoord,
+            components: 2,
+            quantization_bits: bits,
+            data,
+        }
+    }
+}
+
 /// One mesh on its way into Draco.
 ///
-/// `positions` holds 3 floats per vertex and `uvs` holds 2. `indices` holds 3
-/// per triangle.
+/// Exactly one attribute must be a [`AttributeType::Position`]. `indices` holds
+/// three entries per triangle.
 #[derive(Debug, Clone, Copy)]
 pub struct MeshView<'a> {
-    pub positions: &'a [f32],
-    pub uvs: Option<&'a [f32]>,
+    pub attributes: &'a [Attribute<'a>],
     pub indices: &'a [u32],
+    pub num_vertices: usize,
 }
 
 /// Encoder settings.
 #[derive(Debug, Clone, Copy)]
 pub struct EncodeOptions {
     pub position: Quantization,
-    /// 0 leaves texture coordinates unquantized.
-    pub uv_bits: i32,
     /// Draco's own scale: 0 is slowest and smallest, 10 is fastest.
     pub speed: i32,
 }
@@ -153,27 +219,52 @@ impl Default for EncodeOptions {
     fn default() -> Self {
         Self {
             position: Quantization::Bits { bits: 14 },
-            uv_bits: 12,
             speed: 0,
         }
     }
 }
 
-/// Compresses one mesh and returns the Draco bitstream.
-pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Vec<u8>, DracoError> {
-    let num_vertices = mesh.positions.len() / 3;
-    if mesh.positions.len() % 3 != 0 {
-        return Err(argument("positions is not a multiple of 3"));
-    }
+/// A Draco bitstream and the unique id Draco gave each input attribute.
+///
+/// The `KHR_draco_mesh_compression` extension names attributes by unique id,
+/// not by position, so the caller needs both halves to write the extension.
+#[derive(Debug, Clone)]
+pub struct Encoded {
+    pub bytes: Vec<u8>,
+    /// One id per attribute of the input mesh, in the same order.
+    pub unique_ids: Vec<u32>,
+}
+
+/// Compresses one mesh.
+pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, DracoError> {
+    let num_vertices = mesh.num_vertices;
     if mesh.indices.len() % 3 != 0 {
         return Err(argument("indices is not a multiple of 3"));
     }
     if num_vertices == 0 || mesh.indices.is_empty() {
         return Err(argument("mesh has no vertices or no triangles"));
     }
-    if let Some(uvs) = mesh.uvs {
-        if uvs.len() != num_vertices * 2 {
-            return Err(argument("uvs does not hold two values per vertex"));
+    if mesh
+        .attributes
+        .iter()
+        .filter(|a| a.kind == AttributeType::Position)
+        .count()
+        != 1
+    {
+        return Err(argument("a mesh needs exactly one position attribute"));
+    }
+    for att in mesh.attributes {
+        if att.components < 1 || att.components > 4 {
+            return Err(argument("an attribute needs 1 to 4 components"));
+        }
+        if att.data.len() != num_vertices * att.components {
+            return Err(argument(&format!(
+                "attribute {:?} holds {} floats, not {} vertices times {} components",
+                att.kind,
+                att.data.len(),
+                num_vertices,
+                att.components
+            )));
         }
     }
     if let Some(&bad) = mesh.indices.iter().find(|&&i| i as usize >= num_vertices) {
@@ -182,41 +273,72 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Vec<u8>, Draco
         )));
     }
 
-    let (position_spacing, position_bits) = match opts.position {
+    let position_spacing = match opts.position {
         Quantization::Grid { spacing } => {
             if !is_power_of_two(spacing) {
                 return Err(argument(&format!(
                     "grid spacing {spacing} is not a power of two"
                 )));
             }
-            (spacing, 0)
+            spacing
         }
-        Quantization::Bits { bits } => (0.0, bits),
+        Quantization::Bits { bits } => {
+            if bits <= 0 {
+                return Err(argument("a bit count must be positive"));
+            }
+            0.0
+        }
+    };
+    let position_bits = match opts.position {
+        Quantization::Bits { bits } => bits,
+        Quantization::Grid { .. } => 0,
     };
 
+    let c_atts: Vec<ffi::TfDracoAttribute> = mesh
+        .attributes
+        .iter()
+        .map(|a| ffi::TfDracoAttribute {
+            kind: a.kind.code(),
+            num_components: a.components as i32,
+            quantization_bits: if a.kind == AttributeType::Position {
+                position_bits
+            } else {
+                a.quantization_bits
+            },
+            data: a.data.as_ptr(),
+        })
+        .collect();
+
     let c_mesh = ffi::TfDracoMesh {
-        positions: mesh.positions.as_ptr(),
-        uvs: mesh.uvs.map_or(std::ptr::null(), |u| u.as_ptr()),
+        attributes: c_atts.as_ptr(),
+        num_attributes: c_atts.len() as u32,
         indices: mesh.indices.as_ptr(),
         num_vertices: num_vertices as u32,
         num_faces: (mesh.indices.len() / 3) as u32,
     };
     let c_opts = ffi::TfDracoEncodeOptions {
         position_spacing,
-        position_bits,
-        uv_bits: opts.uv_bits,
         speed: opts.speed,
     };
     let mut out = ffi::TfDracoBuffer {
         data: std::ptr::null_mut(),
         len: 0,
     };
+    let mut unique_ids = vec![0u32; c_atts.len()];
     let mut err = [0 as c_char; ERR_LEN];
 
     // SAFETY: every pointer above comes from a live slice that outlives the
-    // call, and `out` and `err` are owned here.
+    // call, `unique_ids` holds one entry per attribute, and `out` and `err` are
+    // owned here.
     let code = unsafe {
-        ffi::tf_draco_encode(&c_mesh, &c_opts, &mut out, err.as_mut_ptr(), ERR_LEN)
+        ffi::tf_draco_encode(
+            &c_mesh,
+            &c_opts,
+            &mut out,
+            unique_ids.as_mut_ptr(),
+            err.as_mut_ptr(),
+            ERR_LEN,
+        )
     };
     if code != ffi::TF_DRACO_OK {
         return Err(DracoError {
@@ -229,7 +351,7 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Vec<u8>, Draco
     let bytes = unsafe { std::slice::from_raw_parts(out.data, out.len) }.to_vec();
     // SAFETY: `out` is the buffer the C side allocated and we have copied it.
     unsafe { ffi::tf_draco_buffer_free(&mut out) };
-    Ok(bytes)
+    Ok(Encoded { bytes, unique_ids })
 }
 
 /// A decoded Draco mesh. Frees the C++ object when dropped.
@@ -246,16 +368,6 @@ impl Drop for DecodedMesh {
         // SAFETY: `raw` came from `tf_draco_decode` and is freed once.
         unsafe { ffi::tf_draco_decoded_free(self.raw) };
     }
-}
-
-/// What kind of thing an attribute holds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AttributeType {
-    Position,
-    Normal,
-    Color,
-    TexCoord,
-    Generic,
 }
 
 impl DecodedMesh {
@@ -296,15 +408,7 @@ impl DecodedMesh {
         if code != ffi::TF_DRACO_OK {
             return None;
         }
-        let kind = match kind {
-            ffi::TF_DRACO_ATTR_POSITION => AttributeType::Position,
-            ffi::TF_DRACO_ATTR_NORMAL => AttributeType::Normal,
-            ffi::TF_DRACO_ATTR_COLOR => AttributeType::Color,
-            ffi::TF_DRACO_ATTR_TEX_COORD => AttributeType::TexCoord,
-            ffi::TF_DRACO_ATTR_GENERIC => AttributeType::Generic,
-            _ => AttributeType::Generic,
-        };
-        Some((kind, components as usize))
+        Some((AttributeType::from_code(kind), components as usize))
     }
 
     /// Reads an attribute as floats, one entry per point, in point order.
@@ -416,25 +520,33 @@ mod tests {
         (positions, vec![0, 1, 2, 0, 2, 3])
     }
 
+    /// Encodes a positions-and-indices pair with the given settings.
+    fn encode_quad(m: &(Vec<f32>, Vec<u32>), opts: &EncodeOptions) -> Encoded {
+        encode(
+            MeshView {
+                attributes: &[Attribute::positions(&m.0)],
+                indices: &m.1,
+                num_vertices: m.0.len() / 3,
+            },
+            opts,
+        )
+        .unwrap()
+    }
+
     #[test]
     fn a_mesh_round_trips() {
         let (positions, indices) = quad(0.0, 4.0);
-        let bytes = encode(
-            MeshView {
-                positions: &positions,
-                uvs: None,
-                indices: &indices,
-            },
+        let encoded = encode_quad(
+            &(positions, indices),
             &EncodeOptions {
                 position: Quantization::grid(0.00390625).unwrap(),
-                uv_bits: 0,
                 speed: 0,
             },
-        )
-        .unwrap();
-        assert!(!bytes.is_empty());
+        );
+        assert!(!encoded.bytes.is_empty());
+        assert_eq!(encoded.unique_ids, vec![0]);
 
-        let decoded = decode(&bytes).unwrap();
+        let decoded = decode(&encoded.bytes).unwrap();
         assert_eq!(decoded.num_faces(), 2);
         let (kind, components) = decoded.attribute(0).unwrap();
         assert_eq!(kind, AttributeType::Position);
@@ -459,20 +571,13 @@ mod tests {
 
         let opts = EncodeOptions {
             position: Quantization::grid(spacing).unwrap(),
-            uv_bits: 0,
             speed: 0,
         };
         let decode_one = |m: &(Vec<f32>, Vec<u32>)| {
-            let bytes = encode(
-                MeshView {
-                    positions: &m.0,
-                    uvs: None,
-                    indices: &m.1,
-                },
-                &opts,
-            )
-            .unwrap();
-            decode(&bytes).unwrap().read_f32(0).unwrap()
+            decode(&encode_quad(m, &opts).bytes)
+                .unwrap()
+                .read_f32(0)
+                .unwrap()
         };
         let dl = decode_one(&left);
         let dr = decode_one(&right);
@@ -532,20 +637,13 @@ mod tests {
 
         let opts = EncodeOptions {
             position: Quantization::Bits { bits: 8 },
-            uv_bits: 0,
             speed: 0,
         };
         let decode_one = |m: &(Vec<f32>, Vec<u32>)| {
-            let bytes = encode(
-                MeshView {
-                    positions: &m.0,
-                    uvs: None,
-                    indices: &m.1,
-                },
-                &opts,
-            )
-            .unwrap();
-            decode(&bytes).unwrap().read_f32(0).unwrap()
+            decode(&encode_quad(m, &opts).bytes)
+                .unwrap()
+                .read_f32(0)
+                .unwrap()
         };
         let dl = decode_one(&left);
         let dr = decode_one(&right);
@@ -593,26 +691,111 @@ mod tests {
 
         let opts = EncodeOptions {
             position: Quantization::grid(spacing).unwrap(),
-            uv_bits: 0,
             speed: 0,
         };
         let decode_one = |m: &(Vec<f32>, Vec<u32>)| {
-            let bytes = encode(
-                MeshView {
-                    positions: &m.0,
-                    uvs: None,
-                    indices: &m.1,
-                },
-                &opts,
-            )
-            .unwrap();
-            decode(&bytes).unwrap().read_f32(0).unwrap()
+            decode(&encode_quad(m, &opts).bytes)
+                .unwrap()
+                .read_f32(0)
+                .unwrap()
         };
         let dl = decode_one(&left);
         let dr = decode_one(&right);
         let holds = |v: &[f32]| v.chunks_exact(3).any(|p| p == [4.0, seam_y, 0.0]);
         assert!(holds(&dl), "the left tile moved the shared vertex");
         assert!(holds(&dr), "the right tile moved the shared vertex");
+    }
+
+    #[test]
+    fn every_attribute_comes_back_under_its_own_unique_id() {
+        // The glTF KHR_draco_mesh_compression extension names attributes by
+        // Draco unique id. A tile carries positions, texture coordinates and
+        // sometimes normals, so the encoder has to report an id for each one
+        // and the decoder has to find each one again.
+        let (positions, indices) = quad(0.0, 4.0);
+        let uvs = vec![0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0];
+        let normals = vec![
+            0.0, 0.0, 1.0, //
+            0.0, 0.0, 1.0, //
+            0.0, 0.0, 1.0, //
+            0.0, 0.0, 1.0, //
+        ];
+        let encoded = encode(
+            MeshView {
+                attributes: &[
+                    Attribute::positions(&positions),
+                    Attribute::tex_coords(&uvs, 12),
+                    Attribute {
+                        kind: AttributeType::Normal,
+                        components: 3,
+                        quantization_bits: 10,
+                        data: &normals,
+                    },
+                ],
+                indices: &indices,
+                num_vertices: 4,
+            },
+            &EncodeOptions {
+                position: Quantization::grid(0.00390625).unwrap(),
+                speed: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(encoded.unique_ids.len(), 3);
+        let mut sorted = encoded.unique_ids.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), 3, "two attributes share a unique id");
+
+        let decoded = decode(&encoded.bytes).unwrap();
+        let expected = [
+            (AttributeType::Position, 3),
+            (AttributeType::TexCoord, 2),
+            (AttributeType::Normal, 3),
+        ];
+        for (id, (kind, components)) in encoded.unique_ids.iter().zip(expected) {
+            let got = decoded.attribute(*id).expect("unique id is not in the bitstream");
+            assert_eq!(got, (kind, components), "unique id {id}");
+            assert_eq!(
+                decoded.read_f32(*id).unwrap().len(),
+                decoded.num_points() as usize * components
+            );
+        }
+    }
+
+    #[test]
+    fn a_mesh_needs_exactly_one_position_attribute() {
+        let uvs = vec![0.0, 0.0, 1.0, 0.0, 1.0, 1.0];
+        let err = encode(
+            MeshView {
+                attributes: &[Attribute::tex_coords(&uvs, 12)],
+                indices: &[0, 1, 2],
+                num_vertices: 3,
+            },
+            &EncodeOptions::default(),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("exactly one position"), "{err}");
+    }
+
+    #[test]
+    fn an_attribute_of_the_wrong_length_is_refused() {
+        let (positions, indices) = quad(0.0, 4.0);
+        let uvs = vec![0.0, 0.0, 1.0, 0.0];  // 2 vertices, not 4
+        let err = encode(
+            MeshView {
+                attributes: &[
+                    Attribute::positions(&positions),
+                    Attribute::tex_coords(&uvs, 12),
+                ],
+                indices: &indices,
+                num_vertices: 4,
+            },
+            &EncodeOptions::default(),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("holds 4 floats"), "{err}");
     }
 
     #[test]
@@ -647,9 +830,9 @@ mod tests {
         // and is not one.
         let err = encode(
             MeshView {
-                positions: &[0.0, 0.0, 0.0],
-                uvs: None,
+                attributes: &[Attribute::positions(&[0.0, 0.0, 0.0])],
                 indices: &[],
+                num_vertices: 1,
             },
             &EncodeOptions::default(),
         )
@@ -661,9 +844,11 @@ mod tests {
     fn an_index_past_the_end_is_refused() {
         let err = encode(
             MeshView {
-                positions: &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                uvs: None,
+                attributes: &[Attribute::positions(&[
+                    0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+                ])],
                 indices: &[0, 1, 9],
+                num_vertices: 3,
             },
             &EncodeOptions::default(),
         )
@@ -673,16 +858,7 @@ mod tests {
 
     #[test]
     fn a_truncated_bitstream_is_refused_rather_than_trusted() {
-        let (positions, indices) = quad(0.0, 4.0);
-        let bytes = encode(
-            MeshView {
-                positions: &positions,
-                uvs: None,
-                indices: &indices,
-            },
-            &EncodeOptions::default(),
-        )
-        .unwrap();
+        let bytes = encode_quad(&quad(0.0, 4.0), &EncodeOptions::default()).bytes;
         assert!(decode(&bytes[..bytes.len() / 2]).is_err());
         assert!(decode(&[]).is_err());
     }

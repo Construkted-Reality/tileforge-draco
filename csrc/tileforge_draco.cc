@@ -44,9 +44,18 @@ extern "C" {
 #define TF_DRACO_ATTR_TEX_COORD 3
 #define TF_DRACO_ATTR_GENERIC 4
 
+// One vertex attribute on its way in. |data| holds num_components floats per
+// vertex, tightly packed, in vertex order.
+struct TfDracoAttribute {
+  int32_t type;            // one of TF_DRACO_ATTR_*
+  int32_t num_components;  // 1 to 4
+  int32_t quantization_bits;  // 0 leaves the attribute unquantized
+  const float *data;
+};
+
 struct TfDracoMesh {
-  const float *positions;  // 3 * num_vertices, never null
-  const float *uvs;        // 2 * num_vertices, null when the mesh has none
+  const TfDracoAttribute *attributes;  // POSITION must be one of them
+  uint32_t num_attributes;
   const uint32_t *indices;  // 3 * num_faces, never null
   uint32_t num_vertices;
   uint32_t num_faces;
@@ -55,14 +64,9 @@ struct TfDracoMesh {
 struct TfDracoEncodeOptions {
   // When > 0, quantize positions onto the global grid of this spacing. Draco
   // then chooses the bit count itself. This is the mode that keeps two
-  // neighbouring tiles on one lattice.
+  // neighbouring tiles on one lattice, and it overrides the POSITION
+  // attribute's own quantization_bits.
   float position_spacing;
-  // Used only when position_spacing is not positive. Fits the mesh's own
-  // bounding box into this many bits, which is what stock Draco does and what
-  // cracks tile boundaries.
-  int32_t position_bits;
-  // 0 disables texture coordinate quantization.
-  int32_t uv_bits;
   // Draco's own scale, 0 slowest and smallest, 10 fastest and largest.
   int32_t speed;
 };
@@ -87,29 +91,28 @@ void SetError(char *err, size_t err_len, const std::string &msg) {
   err[n] = '\0';
 }
 
-std::unique_ptr<draco::Mesh> BuildMesh(const TfDracoMesh &in) {
+// Builds the Draco mesh and records, per input attribute, the unique id Draco
+// gave it. The glTF KHR_draco_mesh_compression extension names attributes by
+// that id, so the caller needs it back.
+std::unique_ptr<draco::Mesh> BuildMesh(const TfDracoMesh &in,
+                                       std::vector<int> *att_ids) {
   std::unique_ptr<draco::Mesh> mesh(new draco::Mesh());
   mesh->set_num_points(in.num_vertices);
   mesh->SetNumFaces(in.num_faces);
 
-  draco::GeometryAttribute pos_att;
-  pos_att.Init(draco::GeometryAttribute::POSITION, nullptr, 3,
-               draco::DT_FLOAT32, false, sizeof(float) * 3, 0);
-  const int pos_id = mesh->AddAttribute(pos_att, true, in.num_vertices);
-  for (uint32_t v = 0; v < in.num_vertices; ++v) {
-    mesh->attribute(pos_id)->SetAttributeValue(draco::AttributeValueIndex(v),
-                                               &in.positions[3 * v]);
-  }
-
-  if (in.uvs != nullptr) {
-    draco::GeometryAttribute uv_att;
-    uv_att.Init(draco::GeometryAttribute::TEX_COORD, nullptr, 2,
-                draco::DT_FLOAT32, false, sizeof(float) * 2, 0);
-    const int uv_id = mesh->AddAttribute(uv_att, true, in.num_vertices);
+  att_ids->clear();
+  for (uint32_t a = 0; a < in.num_attributes; ++a) {
+    const TfDracoAttribute &src = in.attributes[a];
+    const int nc = src.num_components;
+    draco::GeometryAttribute att;
+    att.Init(static_cast<draco::GeometryAttribute::Type>(src.type), nullptr, nc,
+             draco::DT_FLOAT32, false, sizeof(float) * nc, 0);
+    const int id = mesh->AddAttribute(att, true, in.num_vertices);
     for (uint32_t v = 0; v < in.num_vertices; ++v) {
-      mesh->attribute(uv_id)->SetAttributeValue(draco::AttributeValueIndex(v),
-                                                &in.uvs[2 * v]);
+      mesh->attribute(id)->SetAttributeValue(draco::AttributeValueIndex(v),
+                                             &src.data[nc * v]);
     }
+    att_ids->push_back(id);
   }
 
   for (uint32_t f = 0; f < in.num_faces; ++f) {
@@ -125,11 +128,13 @@ std::unique_ptr<draco::Mesh> BuildMesh(const TfDracoMesh &in) {
 }  // namespace
 
 // Encodes one mesh. On success the caller owns |out| and must release it with
-// tf_draco_buffer_free.
+// tf_draco_buffer_free. |out_unique_ids| receives one unique id per input
+// attribute, in the same order, and must hold num_attributes entries.
 int32_t tf_draco_encode(const TfDracoMesh *in, const TfDracoEncodeOptions *opts,
-                        TfDracoBuffer *out, char *err, size_t err_len) {
+                        TfDracoBuffer *out, uint32_t *out_unique_ids, char *err,
+                        size_t err_len) {
   if (in == nullptr || opts == nullptr || out == nullptr ||
-      in->positions == nullptr || in->indices == nullptr) {
+      in->attributes == nullptr || in->indices == nullptr) {
     SetError(err, err_len, "null argument");
     return TF_DRACO_ERR_ARGUMENT;
   }
@@ -140,14 +145,19 @@ int32_t tf_draco_encode(const TfDracoMesh *in, const TfDracoEncodeOptions *opts,
     SetError(err, err_len, "mesh has no vertices or no faces");
     return TF_DRACO_ERR_ARGUMENT;
   }
-  if (opts->position_spacing <= 0.f && opts->position_bits <= 0) {
-    SetError(err, err_len, "neither a grid spacing nor a position bit count");
-    return TF_DRACO_ERR_ARGUMENT;
+  for (uint32_t a = 0; a < in->num_attributes; ++a) {
+    const TfDracoAttribute &att = in->attributes[a];
+    if (att.data == nullptr || att.num_components < 1 ||
+        att.num_components > 4) {
+      SetError(err, err_len, "attribute has no data or a bad component count");
+      return TF_DRACO_ERR_ARGUMENT;
+    }
   }
 
+  std::vector<int> att_ids;
   std::unique_ptr<draco::Mesh> mesh;
   try {
-    mesh = BuildMesh(*in);
+    mesh = BuildMesh(*in, &att_ids);
   } catch (const std::bad_alloc &) {
     SetError(err, err_len, "out of memory while building the mesh");
     return TF_DRACO_ERR_INTERNAL;
@@ -156,23 +166,31 @@ int32_t tf_draco_encode(const TfDracoMesh *in, const TfDracoEncodeOptions *opts,
   draco::ExpertEncoder encoder(*mesh);
   encoder.SetSpeedOptions(opts->speed, opts->speed);
 
-  const int pos_id =
-      mesh->GetNamedAttributeId(draco::GeometryAttribute::POSITION);
-  if (opts->position_spacing > 0.f) {
-    const draco::Status s = encoder.SetAttributeGridQuantization(
-        *mesh, pos_id, opts->position_spacing);
-    if (!s.ok()) {
-      SetError(err, err_len, std::string("grid quantization: ") + s.error_msg());
-      return TF_DRACO_ERR_ENCODE;
+  bool saw_position = false;
+  for (uint32_t a = 0; a < in->num_attributes; ++a) {
+    const TfDracoAttribute &src = in->attributes[a];
+    const int id = att_ids[a];
+    if (src.type == TF_DRACO_ATTR_POSITION && opts->position_spacing > 0.f) {
+      saw_position = true;
+      const draco::Status s =
+          encoder.SetAttributeGridQuantization(*mesh, id,
+                                               opts->position_spacing);
+      if (!s.ok()) {
+        SetError(err, err_len,
+                 std::string("grid quantization: ") + s.error_msg());
+        return TF_DRACO_ERR_ENCODE;
+      }
+    } else if (src.quantization_bits > 0) {
+      if (src.type == TF_DRACO_ATTR_POSITION) {
+        saw_position = true;
+      }
+      encoder.SetAttributeQuantization(id, src.quantization_bits);
     }
-  } else {
-    encoder.SetAttributeQuantization(pos_id, opts->position_bits);
   }
-
-  const int uv_id =
-      mesh->GetNamedAttributeId(draco::GeometryAttribute::TEX_COORD);
-  if (uv_id >= 0 && opts->uv_bits > 0) {
-    encoder.SetAttributeQuantization(uv_id, opts->uv_bits);
+  if (!saw_position) {
+    SetError(err, err_len,
+             "positions have neither a grid spacing nor a bit count");
+    return TF_DRACO_ERR_ARGUMENT;
   }
 
   draco::EncoderBuffer buf;
@@ -180,6 +198,12 @@ int32_t tf_draco_encode(const TfDracoMesh *in, const TfDracoEncodeOptions *opts,
   if (!s.ok()) {
     SetError(err, err_len, std::string("encode: ") + s.error_msg());
     return TF_DRACO_ERR_ENCODE;
+  }
+
+  if (out_unique_ids != nullptr) {
+    for (uint32_t a = 0; a < in->num_attributes; ++a) {
+      out_unique_ids[a] = mesh->attribute(att_ids[a])->unique_id();
+    }
   }
 
   out->len = buf.size();
