@@ -51,6 +51,12 @@ struct TfDracoAttribute {
   int32_t num_components;  // 1 to 4
   int32_t quantization_bits;  // 0 leaves the attribute unquantized
   const float *data;
+  // When not null, quantize onto the cube of side |explicit_range| anchored
+  // at |explicit_origin|, which holds num_components floats. Every mesh that
+  // declares the same origin and range then shares one lattice. Null lets
+  // Draco fit the attribute's own bounding box, which does not.
+  const float *explicit_origin;
+  float explicit_range;
 };
 
 struct TfDracoMesh {
@@ -184,7 +190,14 @@ int32_t tf_draco_encode(const TfDracoMesh *in, const TfDracoEncodeOptions *opts,
       if (src.type == TF_DRACO_ATTR_POSITION) {
         saw_position = true;
       }
-      encoder.SetAttributeQuantization(id, src.quantization_bits);
+      if (src.explicit_origin != nullptr) {
+        encoder.SetAttributeExplicitQuantization(id, src.quantization_bits,
+                                                 src.num_components,
+                                                 src.explicit_origin,
+                                                 src.explicit_range);
+      } else {
+        encoder.SetAttributeQuantization(id, src.quantization_bits);
+      }
     }
   }
   if (!saw_position) {

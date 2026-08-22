@@ -172,6 +172,16 @@ pub struct Attribute<'a> {
     /// 0 leaves the attribute unquantized.
     pub quantization_bits: i32,
     pub data: &'a [f32],
+    /// When `Some`, quantize onto the cube of side `range` anchored at
+    /// `origin`, which holds one value per component. Every mesh that declares
+    /// the same origin and range then shares one lattice, which is what keeps
+    /// a texture coordinate in the same place in two neighbouring tiles.
+    ///
+    /// `None` lets Draco fit the attribute's own bounding box. Two tiles then
+    /// get two lattices and a shared value lands in two places.
+    ///
+    /// Positions ignore this. They take [`EncodeOptions::position`].
+    pub explicit: Option<(&'a [f32], f32)>,
 }
 
 impl<'a> Attribute<'a> {
@@ -182,16 +192,24 @@ impl<'a> Attribute<'a> {
             components: 3,
             quantization_bits: 0,
             data,
+            explicit: None,
         }
     }
 
-    /// Texture coordinates, two floats per vertex.
-    pub fn tex_coords(data: &'a [f32], bits: i32) -> Self {
+    /// Texture coordinates in the unit square, two floats per vertex.
+    ///
+    /// The lattice is the unit square itself, not the tile's own range, so
+    /// every tile places a given texture coordinate at the same point. Draco
+    /// does not clamp, so a value outside the unit square would fold onto the
+    /// wrong texel. Check the input before you call this.
+    pub fn unit_tex_coords(data: &'a [f32], bits: i32) -> Self {
+        const ORIGIN: [f32; 2] = [0.0, 0.0];
         Self {
             kind: AttributeType::TexCoord,
             components: 2,
             quantization_bits: bits,
             data,
+            explicit: Some((&ORIGIN, 1.0)),
         }
     }
 }
@@ -257,6 +275,20 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
         if att.components < 1 || att.components > 4 {
             return Err(argument("an attribute needs 1 to 4 components"));
         }
+        if let Some((origin, range)) = att.explicit {
+            if origin.len() != att.components {
+                return Err(argument(&format!(
+                    "attribute {:?} declares an explicit origin of {} values, \
+                     not {} components",
+                    att.kind,
+                    origin.len(),
+                    att.components
+                )));
+            }
+            if !(range > 0.0) {
+                return Err(argument("an explicit range must be positive"));
+            }
+        }
         if att.data.len() != num_vertices * att.components {
             return Err(argument(&format!(
                 "attribute {:?} holds {} floats, not {} vertices times {} components",
@@ -306,6 +338,11 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
                 a.quantization_bits
             },
             data: a.data.as_ptr(),
+            explicit_origin: match a.explicit {
+                Some((origin, _)) if a.kind != AttributeType::Position => origin.as_ptr(),
+                _ => std::ptr::null(),
+            },
+            explicit_range: a.explicit.map_or(0.0, |(_, range)| range),
         })
         .collect();
 
@@ -724,12 +761,13 @@ mod tests {
             MeshView {
                 attributes: &[
                     Attribute::positions(&positions),
-                    Attribute::tex_coords(&uvs, 12),
+                    Attribute::unit_tex_coords(&uvs, 12),
                     Attribute {
                         kind: AttributeType::Normal,
                         components: 3,
                         quantization_bits: 10,
                         data: &normals,
+                        explicit: None,
                     },
                 ],
                 indices: &indices,
@@ -765,11 +803,78 @@ mod tests {
     }
 
     #[test]
+    fn a_unit_square_lattice_holds_a_texture_coordinate_that_an_auto_fit_moves() {
+        // Draco has no grid mode for texture coordinates, so the unit square
+        // stands in for one. Two tiles that declare the same origin and range
+        // share a lattice; two tiles that let Draco fit their own range do
+        // not.
+        //
+        // The shared value has to be interior in both tiles. Draco maps a
+        // bounding-box minimum to index 0 and a maximum to the last index, so
+        // a value on either edge survives even an auto fit. Draco also keeps
+        // one scalar range, the largest span over the components, so the two
+        // tiles need different largest spans as well.
+        let (positions, indices) = quad(0.0, 4.0);
+        let shared = 0.3f32;
+        let narrow = vec![0.1, 0.0, 0.4, 0.0, 0.4, 0.2, shared, 0.2]; // span 0.3
+        let wide = vec![0.0, 0.0, 1.0, 0.0, 1.0, 1.0, shared, 1.0]; // span 1.0
+
+        let read_shared = |uvs: &[f32], explicit: bool| -> f32 {
+            let att = if explicit {
+                Attribute::unit_tex_coords(uvs, 10)
+            } else {
+                Attribute {
+                    kind: AttributeType::TexCoord,
+                    components: 2,
+                    quantization_bits: 10,
+                    data: uvs,
+                    explicit: None,
+                }
+            };
+            let encoded = encode(
+                MeshView {
+                    attributes: &[Attribute::positions(&positions), att],
+                    indices: &indices,
+                    num_vertices: 4,
+                },
+                &EncodeOptions {
+                    position: Quantization::grid(0.00390625).unwrap(),
+                    speed: 0,
+                },
+            )
+            .unwrap();
+            let decoded = decode(&encoded.bytes).unwrap();
+            let uv = decoded.read_f32(encoded.unique_ids[1]).unwrap();
+            // Where this tile put the texture coordinate that was at `shared`.
+            uv.chunks_exact(2)
+                .map(|c| c[0])
+                .min_by(|a, b| {
+                    (a - shared)
+                        .abs()
+                        .partial_cmp(&(b - shared).abs())
+                        .unwrap()
+                })
+                .unwrap()
+        };
+
+        assert_eq!(
+            read_shared(&narrow, true),
+            read_shared(&wide, true),
+            "the unit-square lattice must put a shared texture coordinate in one place"
+        );
+        assert_ne!(
+            read_shared(&narrow, false),
+            read_shared(&wide, false),
+            "an auto-fitted range is expected to move it"
+        );
+    }
+
+    #[test]
     fn a_mesh_needs_exactly_one_position_attribute() {
         let uvs = vec![0.0, 0.0, 1.0, 0.0, 1.0, 1.0];
         let err = encode(
             MeshView {
-                attributes: &[Attribute::tex_coords(&uvs, 12)],
+                attributes: &[Attribute::unit_tex_coords(&uvs, 12)],
                 indices: &[0, 1, 2],
                 num_vertices: 3,
             },
@@ -787,7 +892,7 @@ mod tests {
             MeshView {
                 attributes: &[
                     Attribute::positions(&positions),
-                    Attribute::tex_coords(&uvs, 12),
+                    Attribute::unit_tex_coords(&uvs, 12),
                 ],
                 indices: &indices,
                 num_vertices: 4,

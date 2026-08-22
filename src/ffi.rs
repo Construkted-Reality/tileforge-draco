@@ -20,6 +20,8 @@ pub struct TfDracoAttribute {
     pub num_components: i32,
     pub quantization_bits: i32,
     pub data: *const f32,
+    pub explicit_origin: *const f32,
+    pub explicit_range: f32,
 }
 
 #[repr(C)]
