@@ -1,0 +1,9 @@
+/target
+Cargo.lock.bak
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+# Local agent workspace.
+.claude/

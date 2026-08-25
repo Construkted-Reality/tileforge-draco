@@ -1,11 +1,14 @@
 [package]
 name = "tileforge-draco"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-authors.workspace = true
-repository.workspace = true
-publish.workspace = true
+# This crate versions on its own now. It no longer follows tileforge-mesh's
+# release number, because tileforge-mesh and tileforge-optimize consume it by
+# pinned git revision, not by version range.
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Construkted Reality"]
+repository = "https://github.com/Construkted-Reality/tileforge-draco"
+publish = false
 # Google Draco is vendored as a submodule, so cargo must not try to package it.
 links = "tileforge_draco"
 
@@ -13,8 +16,10 @@ links = "tileforge_draco"
 
 [dev-dependencies]
 # The glbpos example reads a GLB's JSON chunk.
-serde_json = { workspace = true }
+serde_json = "1"
 
 [build-dependencies]
-cc = { workspace = true }
-cmake = { workspace = true }
+# Pinned to the same revisions tileforge-mesh and tileforge-optimize pin, so
+# one Draco build behaves the same in both callers.
+cc = "=1.2.16"
+cmake = "=0.1.54"

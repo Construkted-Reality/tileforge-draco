@@ -1,0 +1,7 @@
+# Pinned to a specific rustc so the clippy bar holds across the callers.
+# Matches the pin in tileforge-mesh and tileforge-optimize, which are the two
+# repositories that consume this crate. Bumping it requires running
+# `cargo clippy --all-targets -- -D warnings` here and in both callers.
+[toolchain]
+channel = "1.94.1"
+components = ["rustfmt", "clippy"]

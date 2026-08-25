@@ -14,7 +14,7 @@ use std::path::PathBuf;
 fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let draco = manifest
-        .join("../../third_party/draco")
+        .join("third_party/draco")
         .canonicalize()
         .expect(
             "third_party/draco is missing. Run: \

@@ -15,8 +15,9 @@
 //!
 //! Measured on a 932 tile corpus: with a power-of-two spacing and pre-snapped
 //! input, 279,117 of 279,117 shared vertices stay bit-identical across all
-//! 2,697 touching tile pairs. See
-//! `docs/design/investigations/2026-08-21-draco-cpp-grid-validation.md`.
+//! 2,697 touching tile pairs. See ADR-048 and
+//! `docs/design/investigations/2026-08-21-draco-cpp-grid-validation.md` in the
+//! tileforge-mesh repository.
 //!
 //! # Two rules the measurement produced
 //!
