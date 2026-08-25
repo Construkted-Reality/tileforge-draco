@@ -259,7 +259,7 @@ pub struct Encoded {
 /// Compresses one mesh.
 pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, DracoError> {
     let num_vertices = mesh.num_vertices;
-    if mesh.indices.len() % 3 != 0 {
+    if !mesh.indices.len().is_multiple_of(3) {
         return Err(argument("indices is not a multiple of 3"));
     }
     if num_vertices == 0 || mesh.indices.is_empty() {
@@ -288,7 +288,8 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
                     att.components
                 )));
             }
-            if !(range > 0.0) {
+            // Also true for NaN, which `range <= 0.0` alone would let through.
+            if range.is_nan() || range <= 0.0 {
                 return Err(argument("an explicit range must be positive"));
             }
         }
@@ -926,7 +927,7 @@ mod tests {
     #[test]
     fn snapping_puts_every_vertex_on_the_grid() {
         let spacing = 0.00390625;
-        let mut v = vec![4.369245529174805, -49.99343490600586, 0.0007];
+        let mut v = vec![4.369_245_5, -49.993_435, 0.0007];
         snap_positions(&mut v, spacing).unwrap();
         for x in &v {
             assert_eq!(x / spacing, (x / spacing).round(), "{x} is off the grid");
