@@ -30,6 +30,8 @@ no test in either repository would notice.
 
 `encode` rejects non-finite attribute values and explicit origins before entering the native codec. Explicit ranges must be finite and positive. Invalid numeric input returns argument error code 1.
 
+`power_of_two_at_most` handles positive subnormal targets without returning zero. Native grid encoding and snapping require a normal power-of-two spacing. The encoder rejects grid indices outside signed 32-bit bounds, spans requiring more than 30 bits, and non-finite quantization ranges. Choose a supported spacing or coordinate frame before encoding.
+
 Read the crate documentation in `src/lib.rs` for the two rules that the
 measurement produced. Both are load bearing.
 
