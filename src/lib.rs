@@ -269,7 +269,8 @@ pub struct Encoded {
     pub unique_ids: Vec<u32>,
 }
 
-/// Compresses one mesh.
+/// Compresses one mesh. Attribute values and explicit origins must be finite.
+/// Explicit ranges must be finite and positive. Invalid input returns code 1.
 pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, DracoError> {
     let num_vertices = mesh.num_vertices;
     if !mesh.indices.len().is_multiple_of(3) {
@@ -301,10 +302,18 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
                     att.components
                 )));
             }
-            // Also true for NaN, which `range <= 0.0` alone would let through.
-            if range.is_nan() || range <= 0.0 {
-                return Err(argument("an explicit range must be positive"));
+            if !range.is_finite() || range <= 0.0 {
+                return Err(argument("an explicit range must be finite and positive"));
             }
+            if origin.iter().any(|v| !v.is_finite()) {
+                return Err(argument("an explicit origin must be finite"));
+            }
+        }
+        if att.data.iter().any(|v| !v.is_finite()) {
+            return Err(argument(&format!(
+                "attribute {:?} values must be finite",
+                att.kind
+            )));
         }
         if att.data.len() != num_vertices * att.components {
             return Err(argument(&format!(
