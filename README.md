@@ -53,6 +53,8 @@ grid spacing needs.
 `ExpertEncoder::SetAttributeGridQuantization`, which is the reason this crate
 exists.
 
+The native wrapper catches exceptions from encode and decode and reports an internal error. This does not guarantee recovery from memory exhaustion: the upstream codec can terminate if allocation fails again during destructor cleanup. Native source edits now invalidate the Cargo build.
+
 ## How the callers depend on it
 
 Both callers pin a git revision. Neither uses a version range.
