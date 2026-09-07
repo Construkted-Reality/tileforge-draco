@@ -19,6 +19,7 @@
 #include <memory>
 #include <new>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "draco/compression/decode.h"
@@ -88,10 +89,9 @@ struct TfDracoDecoded {
 
 namespace {
 
-void SetError(char *err, size_t err_len, const std::string &msg) {
-  if (err == nullptr || err_len == 0) {
-    return;
-  }
+// string_view accepts literals without allocating, including in catch paths.
+void SetError(char *err, size_t err_len, std::string_view msg) noexcept {
+  if (err == nullptr || err_len == 0) return;
   const size_t n = msg.size() < err_len - 1 ? msg.size() : err_len - 1;
   memcpy(err, msg.data(), n);
   err[n] = '\0';
@@ -138,7 +138,8 @@ std::unique_ptr<draco::Mesh> BuildMesh(const TfDracoMesh &in,
 // attribute, in the same order, and must hold num_attributes entries.
 int32_t tf_draco_encode(const TfDracoMesh *in, const TfDracoEncodeOptions *opts,
                         TfDracoBuffer *out, uint32_t *out_unique_ids, char *err,
-                        size_t err_len) {
+                        size_t err_len) try {
+  if (out != nullptr) { out->data = nullptr; out->len = 0; }
   if (in == nullptr || opts == nullptr || out == nullptr ||
       in->attributes == nullptr || in->indices == nullptr) {
     SetError(err, err_len, "null argument");
@@ -228,6 +229,9 @@ int32_t tf_draco_encode(const TfDracoMesh *in, const TfDracoEncodeOptions *opts,
   }
   memcpy(out->data, buf.data(), out->len);
   return TF_DRACO_OK;
+} catch (...) {
+  SetError(err, err_len, "native exception while encoding mesh");
+  return TF_DRACO_ERR_INTERNAL;
 }
 
 void tf_draco_buffer_free(TfDracoBuffer *buf) {
@@ -242,7 +246,8 @@ void tf_draco_buffer_free(TfDracoBuffer *buf) {
 // Decodes a Draco mesh. On success the caller owns |*out| and must release it
 // with tf_draco_decoded_free.
 int32_t tf_draco_decode(const uint8_t *data, size_t len, TfDracoDecoded **out,
-                        char *err, size_t err_len) {
+                        char *err, size_t err_len) try {
+  if (out != nullptr) *out = nullptr;
   if (data == nullptr || out == nullptr) {
     SetError(err, err_len, "null argument");
     return TF_DRACO_ERR_ARGUMENT;
@@ -279,6 +284,9 @@ int32_t tf_draco_decode(const uint8_t *data, size_t len, TfDracoDecoded **out,
   decoded->mesh = std::move(maybe).value();
   *out = decoded;
   return TF_DRACO_OK;
+} catch (...) {
+  SetError(err, err_len, "native exception while decoding mesh");
+  return TF_DRACO_ERR_INTERNAL;
 }
 
 void tf_draco_decoded_free(TfDracoDecoded *decoded) { delete decoded; }
