@@ -1,0 +1,11 @@
+   Compiling tileforge-draco v0.1.0 (/mnt/data2/draco/review-fixes-20260906/source)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.46s
+     Running tests/grid_corpus.rs (/mnt/data2/draco/review-fixes-20260906/target/debug/deps/grid_corpus-459cedca62d7b824)
+
+running 1 test
+test grid_corpus_preserves_lattice_through_native_roundtrip has been running for over 60 seconds
+grid corpus: 932 files, 930 primitives, 10849344 vertices
+test grid_corpus_preserves_lattice_through_native_roundtrip ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 189.98s
+

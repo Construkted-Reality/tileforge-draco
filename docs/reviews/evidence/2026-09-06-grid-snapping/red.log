@@ -1,0 +1,36 @@
+   Compiling shlex v1.3.0
+   Compiling zmij v1.0.23
+   Compiling serde_core v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling itoa v1.0.18
+   Compiling cc v1.2.16
+   Compiling memchr v2.8.3
+   Compiling cmake v0.1.54
+   Compiling tileforge-draco v0.1.0 (/mnt/data2/draco/review-fixes-20260906/source)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 34.22s
+     Running unittests src/lib.rs (/mnt/data2/draco/review-fixes-20260906/target/debug/deps/tileforge_draco-716bafbfa9a124af)
+
+running 4 tests
+test tests::snapping_keeps_the_halfway_rule ... ok
+
+thread 'tests::snapping_preserves_large_aligned_coordinates' (80915) panicked at src/lib.rs:944:13:
+assertion `left == right` failed
+  left: [8388610.0, -8388608.0]
+ right: [8388609.0, -8388609.0]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tests::snapping_preserves_large_aligned_coordinates ... FAILED
+
+thread 'tests::snapping_rejects_invalid_results_without_partial_mutation' (80917) panicked at src/lib.rs:963:13:
+assertion failed: snap_positions(&mut positions, 1.0).is_err()
+test tests::snapping_puts_every_vertex_on_the_grid ... ok
+test tests::snapping_rejects_invalid_results_without_partial_mutation ... FAILED
+
+failures:
+
+failures:
+    tests::snapping_preserves_large_aligned_coordinates
+    tests::snapping_rejects_invalid_results_without_partial_mutation
+
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`
