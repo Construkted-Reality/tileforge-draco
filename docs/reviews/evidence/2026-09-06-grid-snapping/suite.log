@@ -1,0 +1,31 @@
+   Compiling tileforge-draco v0.1.0 (/mnt/data2/draco/review-fixes-20260906/source)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+     Running unittests src/lib.rs (/mnt/data2/draco/review-fixes-20260906/target/debug/deps/tileforge_draco-716bafbfa9a124af)
+
+running 17 tests
+test tests::a_grid_spacing_must_be_a_power_of_two ... ok
+test tests::a_mesh_needs_exactly_one_position_attribute ... ok
+test tests::an_attribute_of_the_wrong_length_is_refused ... ok
+test tests::an_empty_mesh_is_refused_with_a_clear_message ... ok
+test tests::an_index_past_the_end_is_refused ... ok
+test tests::a_mesh_round_trips ... ok
+test tests::power_of_two_at_most_rounds_down ... ok
+test tests::snapping_keeps_the_halfway_rule ... ok
+test tests::snapping_preserves_large_aligned_coordinates ... ok
+test tests::snapping_puts_every_vertex_on_the_grid ... ok
+test tests::snapping_rejects_invalid_results_without_partial_mutation ... ok
+test tests::a_truncated_bitstream_is_refused_rather_than_trusted ... ok
+test tests::a_grid_holds_the_same_vertex_that_a_bit_count_moves ... ok
+test tests::a_bit_count_moves_a_shared_vertex_that_is_not_on_a_corner ... ok
+test tests::every_attribute_comes_back_under_its_own_unique_id ... ok
+test tests::neighbouring_tiles_agree_on_a_shared_edge ... ok
+test tests::a_unit_square_lattice_holds_a_texture_coordinate_that_an_auto_fit_moves ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/glbpos.rs (/mnt/data2/draco/review-fixes-20260906/target/debug/examples/glbpos-2b8952639f72947f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -1,0 +1,7 @@
+   Compiling tileforge-draco v0.1.0 (/mnt/data2/draco/review-fixes-20260906/source)
+    Checking serde_core v1.0.229
+    Checking zmij v1.0.23
+    Checking itoa v1.0.18
+    Checking memchr v2.8.3
+    Checking serde_json v1.0.151
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 33.10s
