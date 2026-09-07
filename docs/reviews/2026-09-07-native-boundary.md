@@ -21,3 +21,15 @@ cargo test --release --test grid_corpus -- --ignored --nocapture
 ```
 
 All commands pass on the final source. The standalone single-allocation sweep passes. The 932-file native corpus gate also passes. No sanitizer coverage is claimed. Source: /mnt/data2/draco/review-fixes-20260906/source. Target: /mnt/data2/draco/review-fixes-20260906/target. Raw logs and backtrace: /mnt/data2/draco/review-fixes-20260906/evidence/native-* on .212. They remain outside Git.
+
+Standalone probe command for the recorded .212 build:
+
+```sh
+cd /mnt/data2/draco/review-fixes-20260906/source
+ulimit -c 0
+DRACO_NATIVE_BUILD=/mnt/data2/draco/review-fixes-20260906/target/release/build/tileforge-draco-158b24bed7327ed7/out/build
+g++ -std=c++17 -O1 -Ithird_party/draco/src -I"$DRACO_NATIVE_BUILD" -Ithird_party/draco/third_party/eigen tests/native_allocation.cc "$DRACO_NATIVE_BUILD/libdraco.a" -o ../evidence/native-allocation
+../evidence/native-allocation
+```
+
+A fresh Cargo build can use a different hash in the native build directory. Select the directory containing its libdraco.a and generated draco_features.h.
