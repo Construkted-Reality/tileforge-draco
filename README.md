@@ -28,6 +28,8 @@ no test in either repository would notice.
 
 `snap_positions` preserves already aligned coordinates and rounds halfway values toward positive infinity. It rejects non-finite input or output before changing any position in the slice.
 
+`encode` rejects non-finite attribute values and explicit origins before entering the native codec. Explicit ranges must be finite and positive. Invalid numeric input returns argument error code 1.
+
 Read the crate documentation in `src/lib.rs` for the two rules that the
 measurement produced. Both are load bearing.
 
