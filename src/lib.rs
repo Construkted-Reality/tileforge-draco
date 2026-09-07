@@ -67,7 +67,7 @@ pub enum Quantization {
 }
 
 impl Quantization {
-    /// A grid whose spacing is a power of two, which is the only kind that
+    /// A grid whose spacing is a normal power of two, which is the only kind that
     /// decodes exactly.
     ///
     /// Draco decodes a position as `origin + index * step`, in 32-bit floats.
@@ -75,11 +75,11 @@ impl Quantization {
     /// both the product and the sum are exact and two tiles must agree. When
     /// it is not, they disagree by about 0.015 mm.
     pub fn grid(spacing: f32) -> Result<Self, DracoError> {
-        if !is_power_of_two(spacing) {
+        if !spacing.is_normal() || !is_power_of_two(spacing) {
             return Err(DracoError {
                 code: 1,
                 message: format!(
-                    "grid spacing {spacing} is not a power of two; \
+                    "grid spacing {spacing} must be a normal power of two; \
                      a spacing that is not exactly representable puts \
                      neighbouring tiles on different lattices"
                 ),
@@ -91,7 +91,14 @@ impl Quantization {
 
 /// True when `v` is a positive, finite power of two.
 pub fn is_power_of_two(v: f32) -> bool {
-    v.is_finite() && v > 0.0 && v.to_bits() & 0x007f_ffff == 0
+    if !v.is_finite() || v <= 0.0 {
+        return false;
+    }
+    if v.is_normal() {
+        v.to_bits() & 0x007f_ffff == 0
+    } else {
+        v.to_bits().is_power_of_two()
+    }
 }
 
 /// The largest power of two that is not larger than `target`.
@@ -103,11 +110,12 @@ pub fn power_of_two_at_most(target: f32) -> f32 {
         target.is_finite() && target > 0.0,
         "target must be positive"
     );
-    let mut v = f32::from_bits(target.to_bits() & 0xff80_0000);
-    if v > target {
-        v /= 2.0;
+    let bits = target.to_bits();
+    if target.is_normal() {
+        f32::from_bits(bits & 0x7f80_0000)
+    } else {
+        f32::from_bits(1 << (31 - bits.leading_zeros()))
     }
-    v
 }
 
 /// Rounds every position onto the global grid of `spacing`.
@@ -120,10 +128,10 @@ pub fn power_of_two_at_most(target: f32) -> f32 {
 /// Measured on corpus E: without this, 35 of 284,462 shared vertices land one
 /// step out. With it, none do, and the corpus is 1,648 bytes smaller.
 pub fn snap_positions(positions: &mut [f32], spacing: f32) -> Result<(), DracoError> {
-    if !is_power_of_two(spacing) {
+    if !spacing.is_normal() || !is_power_of_two(spacing) {
         return Err(DracoError {
             code: 1,
-            message: format!("grid spacing {spacing} is not a power of two"),
+            message: format!("grid spacing {spacing} must be a normal power of two"),
         });
     }
     // Binary64 keeps the full binary32 significand through scaling and the
@@ -333,9 +341,9 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
 
     let position_spacing = match opts.position {
         Quantization::Grid { spacing } => {
-            if !is_power_of_two(spacing) {
+            if !spacing.is_normal() || !is_power_of_two(spacing) {
                 return Err(argument(&format!(
-                    "grid spacing {spacing} is not a power of two"
+                    "grid spacing {spacing} must be a normal power of two"
                 )));
             }
             spacing
@@ -347,6 +355,17 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
             0.0
         }
     };
+    if position_spacing > 0.0 {
+        let positions = mesh
+            .attributes
+            .iter()
+            .find(|a| a.kind == AttributeType::Position)
+            .unwrap();
+        if positions.components != 3 {
+            return Err(argument("grid positions need three components"));
+        }
+        validate_grid_domain(positions.data, position_spacing)?;
+    }
     let position_bits = match opts.position {
         Quantization::Bits { bits } => bits,
         Quantization::Grid { .. } => 0,
@@ -558,6 +577,39 @@ pub fn decode(data: &[u8]) -> Result<DecodedMesh, DracoError> {
         });
     }
     Ok(DecodedMesh { raw })
+}
+
+// Match the native float division and rounding before its signed integer
+// conversions. Restrict the span so its bit count and signed shifts stay valid.
+fn validate_grid_domain(positions: &[f32], spacing: f32) -> Result<(), DracoError> {
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    for p in positions.chunks_exact(3) {
+        for axis in 0..3 {
+            min[axis] = min[axis].min(p[axis]);
+            max[axis] = max[axis].max(p[axis]);
+        }
+    }
+    for axis in 0..3 {
+        let lo = (min[axis] / spacing).floor() as f64;
+        let hi = (max[axis] / spacing).ceil() as f64;
+        if !lo.is_finite()
+            || !hi.is_finite()
+            || lo < i32::MIN as f64
+            || hi > i32::MAX as f64
+            || hi - lo + 1.0 > (1u64 << 30) as f64
+        {
+            return Err(argument(
+                "grid coordinates exceed the native signed-index or 30-bit span limit",
+            ));
+        }
+        let values = (hi - lo + 1.0) as u64;
+        let intervals = values.next_power_of_two() - 1;
+        if !(intervals as f32 * spacing).is_finite() {
+            return Err(argument("grid quantization range must be finite"));
+        }
+    }
+    Ok(())
 }
 
 fn argument(message: &str) -> DracoError {
