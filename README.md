@@ -26,6 +26,8 @@ no test in either repository would notice.
 - `snap_positions`, which puts vertices on the lattice before the encode.
 - `power_of_two_at_most`, the rounding rule the two callers share.
 
+`snap_positions` preserves already aligned coordinates and rounds halfway values toward positive infinity. It rejects non-finite input or output before changing any position in the slice.
+
 Read the crate documentation in `src/lib.rs` for the two rules that the
 measurement produced. Both are load bearing.
 

@@ -126,8 +126,20 @@ pub fn snap_positions(positions: &mut [f32], spacing: f32) -> Result<(), DracoEr
             message: format!("grid spacing {spacing} is not a power of two"),
         });
     }
+    // Binary64 keeps the full binary32 significand through scaling and the
+    // half-step addition. Binary32 can move an already integral coordinate
+    // here, or overflow the quotient even when the final result is finite.
+    let snapped = |v: f32| ((v as f64 / spacing as f64 + 0.5).floor() * spacing as f64) as f32;
+    // Validate the whole slice before mutation so an error cannot leave a
+    // partially snapped mesh behind.
+    if positions
+        .iter()
+        .any(|&v| !v.is_finite() || !snapped(v).is_finite())
+    {
+        return Err(argument("positions and snapped results must be finite"));
+    }
     for v in positions.iter_mut() {
-        *v = (*v / spacing + 0.5).floor() * spacing;
+        *v = snapped(*v);
     }
     Ok(())
 }
@@ -933,6 +945,40 @@ mod tests {
         for x in &v {
             assert_eq!(x / spacing, (x / spacing).round(), "{x} is off the grid");
         }
+    }
+
+    #[test]
+    fn snapping_preserves_large_aligned_coordinates() {
+        for spacing in [1.0, 0.5, 0.00390625] {
+            let mut positions = [8_388_609.0 * spacing, -8_388_609.0 * spacing];
+            let expected = positions;
+            snap_positions(&mut positions, spacing).unwrap();
+            assert_eq!(positions, expected);
+        }
+        let mut max = [f32::MAX];
+        snap_positions(&mut max, 0.5).unwrap();
+        assert_eq!(max, [f32::MAX]);
+    }
+
+    #[test]
+    fn snapping_keeps_the_halfway_rule() {
+        let mut positions = [-1.5, -0.5, 0.5, 1.5];
+        snap_positions(&mut positions, 1.0).unwrap();
+        assert_eq!(positions, [-1.0, 0.0, 1.0, 2.0]);
+    }
+
+    #[test]
+    fn snapping_rejects_invalid_results_without_partial_mutation() {
+        for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut positions = [0.25, invalid];
+            let before = positions.map(f32::to_bits);
+            assert!(snap_positions(&mut positions, 1.0).is_err());
+            assert_eq!(positions.map(f32::to_bits), before);
+        }
+        let mut positions = [1.0, f32::MAX];
+        let before = positions;
+        assert!(snap_positions(&mut positions, f32::from_bits(254 << 23)).is_err());
+        assert_eq!(positions, before);
     }
 
     #[test]
