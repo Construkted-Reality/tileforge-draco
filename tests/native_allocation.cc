@@ -1,3 +1,5 @@
+// ABOUTME: Injects allocation failure through native encode and decode calls.
+// ABOUTME: Checks that exceptions stay within the C boundary and outputs remain clear.
 // Standalone fault injection: link against the same static Draco build.
 #include <cstdlib>
 #include <cstdio>
@@ -21,7 +23,7 @@ int main() {
   const uint32_t indices[] = {0,1,2};
   TfDracoAttribute att{TF_DRACO_ATTR_POSITION, 3, 14, positions, nullptr, 0};
   TfDracoMesh mesh{&att, 1, indices, 3, 1};
-  TfDracoEncodeOptions opts{0, 0};
+  TfDracoEncodeOptions opts{0, 0, 0};
   char err[512];
   TfDracoBuffer valid{};
   if (tf_draco_encode(&mesh, &opts, &valid, nullptr, err, sizeof(err))) return 1;

@@ -1,3 +1,5 @@
+// ABOUTME: Declares the native Draco encoding and decoding boundary.
+// ABOUTME: Mirrors C structures and ownership operations used by the safe API.
 //! The raw C boundary. Nothing outside this module calls it.
 //!
 //! Every declaration here mirrors `csrc/tileforge_draco.cc`. Change one and
@@ -37,6 +39,7 @@ pub struct TfDracoMesh {
 pub struct TfDracoEncodeOptions {
     pub position_spacing: f32,
     pub speed: i32,
+    pub lossless_position: i32,
 }
 
 #[repr(C)]
