@@ -1,3 +1,5 @@
+// ABOUTME: Implements mesh encoding and decoding behind a C interface.
+// ABOUTME: Contains native exceptions and exposes explicit position quantization modes.
 // A C entry point onto Google Draco, for tileforge.
 //
 // Why this file exists at all:
@@ -76,6 +78,8 @@ struct TfDracoEncodeOptions {
   float position_spacing;
   // Draco's own scale, 0 slowest and smallest, 10 fastest and largest.
   int32_t speed;
+  // Nonzero disables position quantization. Other attributes retain their settings.
+  int32_t lossless_position;
 };
 
 struct TfDracoBuffer {
@@ -177,7 +181,10 @@ int32_t tf_draco_encode(const TfDracoMesh *in, const TfDracoEncodeOptions *opts,
   for (uint32_t a = 0; a < in->num_attributes; ++a) {
     const TfDracoAttribute &src = in->attributes[a];
     const int id = att_ids[a];
-    if (src.type == TF_DRACO_ATTR_POSITION && opts->position_spacing > 0.f) {
+    if (src.type == TF_DRACO_ATTR_POSITION && opts->lossless_position != 0) {
+      saw_position = true;
+      encoder.SetAttributeQuantization(id, 0);
+    } else if (src.type == TF_DRACO_ATTR_POSITION && opts->position_spacing > 0.f) {
       saw_position = true;
       const draco::Status s =
           encoder.SetAttributeGridQuantization(*mesh, id,
@@ -203,7 +210,7 @@ int32_t tf_draco_encode(const TfDracoMesh *in, const TfDracoEncodeOptions *opts,
   }
   if (!saw_position) {
     SetError(err, err_len,
-             "positions have neither a grid spacing nor a bit count");
+             "positions need a grid spacing, a bit count, or lossless encoding");
     return TF_DRACO_ERR_ARGUMENT;
   }
 

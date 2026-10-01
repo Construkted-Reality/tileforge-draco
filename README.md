@@ -23,6 +23,7 @@ no test in either repository would notice.
 - `encode` and `decode` over Draco meshes.
 - `Quantization::Grid`, which takes a lattice **spacing** instead of a bit
   count, so every tile shares one lattice anchored at zero.
+- `Quantization::Lossless`, which preserves finite position values without quantization.
 - `snap_positions`, which puts vertices on the lattice before the encode.
 - `power_of_two_at_most`, the rounding rule the two callers share.
 
@@ -34,6 +35,10 @@ no test in either repository would notice.
 
 Read the crate documentation in `src/lib.rs` for the two rules that the
 measurement produced. Both are load bearing.
+
+Lossless positions retain the source coordinates while Draco compresses mesh topology and attributes. Draco can reorder vertices, split vertices, and reorder faces. Callers must compare oriented triangle values when they need to verify geometry preservation. Unquantized attributes retain their finite values; other attributes keep their requested quantization. Signed zero can normalize to positive zero.
+
+Lossless mode does not require a grid-domain check or position snapping. It still rejects non-finite values, invalid indices, and invalid explicit attribute ranges. `Quantization::Bits { bits: 0 }` remains invalid. The default remains 14-bit position quantization. Grid encoding retains its existing arithmetic and seam contract.
 
 ## Build requirements
 
@@ -68,8 +73,7 @@ To move both callers onto a new revision:
 3. Update the `rev` in `tileforge-optimize/Cargo.toml`.
 4. Run the seam test in each caller before you merge either one.
 
-Do not update one caller without the other. A lattice difference between them
-is exactly the failure this crate prevents.
+When a revision changes grid arithmetic, update both callers together. A revision that adds a separate encoding mode can be adopted independently if the existing grid behavior remains unchanged and the seam tests pass.
 
 ## History
 

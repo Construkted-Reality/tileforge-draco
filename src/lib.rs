@@ -1,3 +1,5 @@
+//! ABOUTME: Encodes and decodes mesh attributes through the native Draco codec.
+//! ABOUTME: Supports shared position grids and position-preserving compression.
 //! Google Draco, for tileforge.
 //!
 //! # Why this crate replaced draco-oxide
@@ -57,13 +59,16 @@ impl std::error::Error for DracoError {}
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Quantization {
     /// Snap to a grid of this spacing in metres, anchored at zero. Draco picks
-    /// the bit count. Use this. It is the only mode that keeps two tiles on
-    /// one lattice.
+    /// the bit count. Neighboring tiles use the same lattice when they share
+    /// a spacing and pre-snapped input.
     Grid { spacing: f32 },
     /// Fit the mesh's own bounding box into this many bits. Every mesh gets a
     /// different lattice, so every shared vertex moves. Kept for measurement
     /// and for a caller that encodes a single whole model.
     Bits { bits: i32 },
+    /// Preserve finite position values without quantization. Draco can reorder
+    /// vertices and faces. Other attributes retain their own quantization.
+    Lossless,
 }
 
 impl Quantization {
@@ -188,7 +193,7 @@ impl AttributeType {
 ///
 /// `data` holds `components` floats per vertex, tightly packed, in vertex
 /// order. Positions take their quantization from [`EncodeOptions::position`],
-/// so `quantization_bits` is ignored on a position attribute that is on a grid.
+/// so `quantization_bits` is ignored on every position attribute.
 #[derive(Debug, Clone, Copy)]
 pub struct Attribute<'a> {
     pub kind: AttributeType,
@@ -348,6 +353,7 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
             }
             spacing
         }
+        Quantization::Lossless => 0.0,
         Quantization::Bits { bits } => {
             if bits <= 0 {
                 return Err(argument("a bit count must be positive"));
@@ -368,7 +374,7 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
     }
     let position_bits = match opts.position {
         Quantization::Bits { bits } => bits,
-        Quantization::Grid { .. } => 0,
+        Quantization::Grid { .. } | Quantization::Lossless => 0,
     };
 
     let c_atts: Vec<ffi::TfDracoAttribute> = mesh
@@ -401,6 +407,7 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
     let c_opts = ffi::TfDracoEncodeOptions {
         position_spacing,
         speed: opts.speed,
+        lossless_position: i32::from(opts.position == Quantization::Lossless),
     };
     let mut out = ffi::TfDracoBuffer {
         data: std::ptr::null_mut(),
