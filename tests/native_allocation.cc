@@ -46,6 +46,44 @@ void *operator new(std::size_t n, std::align_val_t a) {
 void *operator new[](std::size_t n, std::align_val_t a) {
   return ::operator new(n, a);
 }
+// The nothrow forms must also come from this file. A sanitizer runtime
+// supplies its own, and memory from its allocator must not reach free().
+void *operator new(std::size_t n, const std::nothrow_t &) noexcept {
+  try {
+    return ::operator new(n);
+  } catch (...) {
+    return nullptr;
+  }
+}
+void *operator new[](std::size_t n, const std::nothrow_t &) noexcept {
+  return ::operator new(n, std::nothrow);
+}
+void *operator new(std::size_t n, std::align_val_t a,
+                   const std::nothrow_t &) noexcept {
+  try {
+    return ::operator new(n, a);
+  } catch (...) {
+    return nullptr;
+  }
+}
+void *operator new[](std::size_t n, std::align_val_t a,
+                     const std::nothrow_t &) noexcept {
+  return ::operator new(n, a, std::nothrow);
+}
+void operator delete(void *p, const std::nothrow_t &) noexcept {
+  std::free(p);
+}
+void operator delete[](void *p, const std::nothrow_t &) noexcept {
+  std::free(p);
+}
+void operator delete(void *p, std::align_val_t,
+                     const std::nothrow_t &) noexcept {
+  std::free(p);
+}
+void operator delete[](void *p, std::align_val_t,
+                       const std::nothrow_t &) noexcept {
+  std::free(p);
+}
 void operator delete(void *p) noexcept { std::free(p); }
 void operator delete[](void *p) noexcept { std::free(p); }
 void operator delete(void *p, std::size_t) noexcept { std::free(p); }
@@ -163,7 +201,9 @@ int Sweep(const Case &c, const TfDracoBuffer &valid, bool decoding) {
   long recovered = 0;
   int defects = 0;
   bool completed = false;
-  for (long n = 0; n < 100000 && !completed; ++n) {
+  // A defect in every attempt would never reach a completed call, so the
+  // sweep stops after 50 defects.
+  for (long n = 0; n < 100000 && !completed && defects < 50; ++n) {
     std::fflush(nullptr);
     const pid_t pid = fork();
     if (pid < 0) {
