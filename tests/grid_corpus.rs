@@ -28,7 +28,11 @@ fn key(position: &[f32]) -> [u32; 3] {
 type CornerKey = [u32; 9];
 
 /// The texture coordinates found at each named corner.
-fn corner_uvs(positions: &[f32], uvs: &[f32], indices: &[u32]) -> HashMap<CornerKey, Vec<[f32; 2]>> {
+fn corner_uvs(
+    positions: &[f32],
+    uvs: &[f32],
+    indices: &[u32],
+) -> HashMap<CornerKey, Vec<[f32; 2]>> {
     let mut corners: HashMap<CornerKey, Vec<[f32; 2]>> = HashMap::new();
     for face in indices.chunks_exact(3) {
         for c in 0..3 {
