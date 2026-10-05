@@ -35,8 +35,6 @@ ran on build host .212.
 
 ## Open items
 
-- The repository has no Git tags. Version 0.2.0 is commit `f25b881`.
-- `CHANGELOG.md` has no 0.1.0 entry. Version 0.1.0 is the state that moved here from `tileforge-mesh`.
 - Persistent allocation failure can terminate the process inside an upstream Draco destructor. See [reviews/2026-09-07-native-boundary.md](reviews/2026-09-07-native-boundary.md).
 - No sanitizer run covers the native code. The grid-domain guard comes from source inspection.
 - The corpus gate checks positions only. It does not establish texture-coordinate, color, or renderer fidelity.

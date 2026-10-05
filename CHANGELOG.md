@@ -19,3 +19,14 @@ These fixes landed after 0.1.0 without a version change. Each one is recorded in
 - Extend the public quantization enum. Callers with exhaustive matches must handle the lossless variant.
 
 Grid arithmetic and default 14-bit position quantization remain unchanged. Zero-bit position quantization remains invalid.
+
+## [0.1.0] - 2026-08-25
+
+First standalone revision (`991ef55`). The crate started on 2026-08-21 inside `tileforge-mesh` as `crates/tileforge-draco` and moved here with its history.
+
+### Added
+- `encode` and `decode` over Google C++ Draco meshes, with a list of attributes and their unique ids.
+- `Quantization::Grid`, which takes a lattice spacing, and `Quantization::Bits`.
+- `snap_positions` and `power_of_two_at_most`.
+- The `glbpos` example, which prints the decoded positions of a Draco GLB.
+- The `third_party/draco` submodule with the `Options::SetFloat` precision patch.
