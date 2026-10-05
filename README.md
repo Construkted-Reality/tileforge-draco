@@ -6,13 +6,14 @@ sub-repositories encode geometry onto the **same** lattice.
 ## Why this crate is shared
 
 `docs/cross-cutting-decisions.md` in the umbrella repository forbids a shared
-Rust crate between the TileForge sub-repositories. The stated reason is that
-"shared" rarely means the same thing in every caller.
+Rust crate between the TileForge sub-repositories, with two named exceptions:
+this crate and `tileforge-crs`. The stated reason for the rule is that "shared"
+rarely means the same thing in every caller.
 
-This crate is the exception, and the reason for the rule is the reason for the
-exception. `tileforge-mesh` produces tilesets. `tileforge-optimize` recompresses
-tilesets that other people produced. Both must put a shared vertex on the same
-lattice point, or a crack opens in the render. Identical arithmetic in both
+The reason for the rule is also the reason for this exception. `tileforge-mesh`
+produces tilesets. `tileforge-optimize` recompresses tilesets that other people
+produced. Both must put a shared vertex on the same lattice point, or a crack
+opens in the render. Identical arithmetic in both
 callers is the whole purpose. A copy in each repository would mean two foreign
 function interface wrappers, two Draco submodules, and two copies of the
 `Options::SetFloat` patch. Drift between the copies breaks seams silently, and
@@ -26,6 +27,7 @@ no test in either repository would notice.
 - `Quantization::Lossless`, which preserves finite position values without quantization.
 - `snap_positions`, which puts vertices on the lattice before the encode.
 - `power_of_two_at_most`, the rounding rule the two callers share.
+- `examples/glbpos.rs`, which prints the decoded positions of a Draco GLB for the seam oracle.
 
 `snap_positions` preserves already aligned coordinates and rounds halfway values toward positive infinity. It rejects non-finite input or output before changing any position in the slice.
 
