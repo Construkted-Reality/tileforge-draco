@@ -61,4 +61,4 @@ Source comments cite decisions that live in `tileforge-mesh`:
 
 - `ADR-048`: `tileforge-mesh/docs/design/adr/048-google-draco-grid-quantization.md`.
 - The grid validation measurement: `tileforge-mesh/docs/design/investigations/2026-08-21-draco-cpp-grid-validation.md`.
-  `csrc/tileforge_draco.cc` cites this path without the repository name.
+  `csrc/tileforge_draco.cc` and `src/lib.rs` cite this path and name the repository.
