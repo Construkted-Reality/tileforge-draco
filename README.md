@@ -51,16 +51,18 @@ The build compiles Google Draco from source. A host needs:
 3. The submodules. Run `git submodule update --init --recursive`.
 
 `third_party/draco` is a submodule of `Construkted-Reality/draco`, branch
-`fix/options-float-precision`. That fork carries one patch against
+`fix/rans-bit-encoder-destructor`. That fork carries two patches against
 `google/draco` 1.5.7. Read `third_party/draco/CONSTRUKTED-CHANGES.md` before you
-move the pin. The patch makes `Options::SetFloat` keep full precision, which the
-grid spacing needs.
+move the pin. The first patch makes `Options::SetFloat` keep full precision,
+which the grid spacing needs. The second patch keeps the `RAnsBitEncoder`
+destructor free of allocation, so an encode under memory exhaustion returns an
+error instead of terminating the process.
 
 `DRACO_TRANSCODER_SUPPORTED` is not optional. Without it, Draco compiles out
 `ExpertEncoder::SetAttributeGridQuantization`, which is the reason this crate
 exists.
 
-The native wrapper catches exceptions from encode and decode and reports an internal error. This does not guarantee recovery from memory exhaustion: the upstream codec can terminate if allocation fails again during destructor cleanup. Edits to the vendored native source invalidate the Cargo build.
+The native wrapper catches exceptions from encode and decode and reports an internal error. The allocation probe fails each allocation of an encode and a decode, either once or with every later allocation, and every attempt returns an error. The probe uses four small meshes, so it does not prove recovery for every input. Edits to the vendored native source invalidate the Cargo build.
 
 ## Testing
 
