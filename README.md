@@ -44,7 +44,7 @@ Lossless mode does not require a grid-domain check or position snapping. It stil
 
 The build compiles Google Draco from source. A host needs:
 
-1. `cmake` 3.22 or later.
+1. `cmake` 3.22 or later. Draco's own `CMakeLists.txt` declares 3.12, but the family build hosts are only tested with 3.22 or later.
 2. A C++17 compiler.
 3. The submodules. Run `git submodule update --init --recursive`.
 
@@ -60,6 +60,17 @@ exists.
 
 The native wrapper catches exceptions from encode and decode and reports an internal error. This does not guarantee recovery from memory exhaustion: the upstream codec can terminate if allocation fails again during destructor cleanup. Edits to the vendored native source invalidate the Cargo build.
 
+## Testing
+
+```sh
+cargo test
+cargo test --release
+cargo clippy --all-targets -- -D warnings
+cargo test --release --test grid_corpus -- --ignored --nocapture
+```
+
+Compile and test on build host .212, not on a desktop. The corpus gate in `tests/grid_corpus.rs` is ignored by default. It reads TFGD mesh dumps from `/mnt/data2/gridcorpus/dump/` on .212 (932 files). `tests/native_allocation.cc` is a standalone allocation-failure probe; [docs/reviews/2026-09-07-native-boundary.md](docs/reviews/2026-09-07-native-boundary.md) has its compile command.
+
 ## How the callers depend on it
 
 Both callers pin a git revision. Neither uses a version range.
@@ -71,7 +82,9 @@ To move both callers onto a new revision:
 1. Merge the change here and note the new commit SHA.
 2. Update the `rev` in `tileforge-mesh/Cargo.toml`.
 3. Update the `rev` in `tileforge-optimize/Cargo.toml`.
-4. Run the seam test in each caller before you merge either one.
+4. Run the seam tests in each caller before you merge either one. In `tileforge-optimize` that is
+   `tests/shared_grid.rs`. In `tileforge-mesh` it is the lattice tests in
+   `crates/tileforge-glb/src/mesh_quantize.rs`.
 
 When a revision changes grid arithmetic, update both callers together. A revision that adds a separate encoding mode can be adopted independently if the existing grid behavior remains unchanged and the seam tests pass.
 

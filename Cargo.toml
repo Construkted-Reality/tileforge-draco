@@ -8,8 +8,9 @@ edition = "2024"
 license = "MIT"
 authors = ["Construkted Reality"]
 repository = "https://github.com/Construkted-Reality/tileforge-draco"
-publish = false
 # Google Draco is vendored as a submodule, so cargo must not try to package it.
+publish = false
+# Declares the native library that build.rs links.
 links = "tileforge_draco"
 
 [dependencies]

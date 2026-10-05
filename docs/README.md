@@ -1,8 +1,8 @@
 # tileforge-draco documentation
 
 Each document starts with a **Status** line and a **Summary** line.
-Removed documents are listed in [REMOVED.md](REMOVED.md) with the command that restores them.
-Each review record names its finding (DRACO-01 to DRACO-06) and the validation that was run on build host .212.
+Removed documents are listed in [REMOVED.md](REMOVED.md) with the commit that still contains them.
+The four 2026-09 review records each name their family-review finding (DRACO-01 to DRACO-06). The 2026-10-01 record documents the 0.2.0 lossless feature. All validation ran on build host .212.
 
 | Document | Status | Read when |
 |---|---|---|
