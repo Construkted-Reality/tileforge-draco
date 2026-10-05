@@ -1,5 +1,8 @@
 # Finite encoder input validation
 
+> **Status:** Historical validation record (DRACO-01, fixed). The other findings it names are fixed in the later 2026-09-07 records.
+> **Summary:** Why `encode` rejects non-finite values, origins, and ranges before the native call, and the regression that reproduced the SIGABRT.
+
 DRACO-01. Base: merged grid-snapping revision f27a329. All compilation and tests run on 192.168.8.212 with Rust 1.94.1, CARGO_BUILD_JOBS=4, and CMAKE_BUILD_PARALLEL_LEVEL=4.
 
 The new subprocess regression reproduces SIGABRT for a NaN position in grid mode before the fix. The native assertion occurs in std::vector<int>::operator[]. Core dumps are disabled for the test launcher. The parent test survives and reports failure.

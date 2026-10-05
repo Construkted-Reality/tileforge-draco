@@ -1,5 +1,8 @@
 # Lossless position mode
 
+> **Status:** Current. Shipped in 0.2.0.
+> **Summary:** Why `Quantization::Lossless` exists for the optimizer and how geometry preservation is verified under codec reordering.
+
 Date: 2026-10-01. Native validation host: 192.168.8.212.
 
 The optimizer must preserve geometry positions when it cannot safely update enclosing volumes or placement. Grid and bit quantization can move those positions. Attempting quantized encoding and then discarding the result leaves such tiles uncompressed and repeats expensive work. An explicit lossless position mode permits compression without that movement.

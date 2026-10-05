@@ -1,5 +1,8 @@
 # Grid arithmetic domain
 
+> **Status:** Historical validation record (DRACO-03 and DRACO-05, fixed). The other findings it names are fixed in the native-boundary record.
+> **Summary:** The native grid arithmetic domain (i32 indices, 2^30 span, normal power-of-two spacing) that the wrapper checks before encoding.
+
 DRACO-03 and DRACO-05. This change follows the finite-input fix b1dacf8.
 
 The subnormal regression fails before the fix: is_power_of_two rejects a positive subnormal power, and power_of_two_at_most can return zero. The mathematical helpers now recognize those values. Native grid encoding and snapping explicitly require a normal power-of-two spacing.

@@ -58,7 +58,7 @@ grid spacing needs.
 `ExpertEncoder::SetAttributeGridQuantization`, which is the reason this crate
 exists.
 
-The native wrapper catches exceptions from encode and decode and reports an internal error. This does not guarantee recovery from memory exhaustion: the upstream codec can terminate if allocation fails again during destructor cleanup. Native source edits now invalidate the Cargo build.
+The native wrapper catches exceptions from encode and decode and reports an internal error. This does not guarantee recovery from memory exhaustion: the upstream codec can terminate if allocation fails again during destructor cleanup. Edits to the vendored native source invalidate the Cargo build.
 
 ## How the callers depend on it
 
@@ -74,6 +74,10 @@ To move both callers onto a new revision:
 4. Run the seam test in each caller before you merge either one.
 
 When a revision changes grid arithmetic, update both callers together. A revision that adds a separate encoding mode can be adopted independently if the existing grid behavior remains unchanged and the seam tests pass.
+
+## Documentation
+
+Start at [docs/README.md](docs/README.md). Release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## History
 
