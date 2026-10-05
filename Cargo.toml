@@ -3,7 +3,7 @@ name = "tileforge-draco"
 # This crate versions on its own now. It no longer follows tileforge-mesh's
 # release number, because tileforge-mesh and tileforge-optimize consume it by
 # pinned git revision, not by version range.
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 license = "MIT"
 authors = ["Construkted Reality"]

@@ -1,6 +1,6 @@
 # Grid arithmetic domain
 
-> **Status:** Historical validation record (DRACO-03 and DRACO-05, fixed). The other findings it names are fixed in the native-boundary record.
+> **Status:** Historical validation record (DRACO-03 and DRACO-05, fixed). The other findings it names are fixed in the native-boundary record. UBSan confirms the guard in [2026-10-05-open-items.md](2026-10-05-open-items.md).
 > **Summary:** The native grid arithmetic domain (i32 indices, 2^30 span, normal power-of-two spacing) that the wrapper checks before encoding.
 
 DRACO-03 and DRACO-05. This change follows the finite-input fix b1dacf8.
