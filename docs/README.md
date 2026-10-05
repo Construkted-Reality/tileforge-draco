@@ -1,7 +1,7 @@
 # tileforge-draco documentation
 
 Each document starts with a **Status** line and a **Summary** line.
-Removed documents are listed in [REMOVED.md](REMOVED.md) with the commit that still contains them.
+Removed documents are listed in [REMOVED.md](REMOVED.md) with the commit that still contains them. Regenerate the contents blocks after you edit a long document: `python3 <tileforge umbrella>/scripts/docs/doc-index.py index .` (check with `... check .`).
 The four 2026-09 review records each name their family-review finding (DRACO-01 to DRACO-06). The 2026-10-01 record documents the 0.2.0 lossless feature. All validation ran on build host .212.
 
 | Document | Status | Read when |
