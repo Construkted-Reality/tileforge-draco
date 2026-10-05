@@ -1,5 +1,8 @@
 # Native exception boundary and build invalidation
 
+> **Status:** Current. The upstream destructor limitation under persistent allocation failure is still unresolved.
+> **Summary:** The native exception boundary, build invalidation on vendored source edits, and the standalone allocation-failure probe command.
+
 DRACO-04 and DRACO-06. This change follows cf59489. All compilation and tests run on 192.168.8.212 with Rust 1.94.1 and four workers.
 
 Before the fix, allocation failure at the first encode allocation escapes the wrapper. The standalone tests/native_allocation.cc probe replaces operator new and checks encode and decode separately. The wrapper now catches exceptions across both complete operations. Error reporting uses string_view and does not allocate for literals. Output pointers are cleared before work starts.
