@@ -1,7 +1,7 @@
 # Native exception boundary and build invalidation
 
-> **Status:** Current. The upstream destructor limitation under persistent allocation failure is still unresolved.
-> **Summary:** The native exception boundary, build invalidation on vendored source edits, and the standalone allocation-failure probe command.
+> **Status:** Historical. The upstream destructor limitation under persistent allocation failure is fixed in 0.2.1. See [2026-10-05-open-items.md](2026-10-05-open-items.md), which also holds the current probe command.
+> **Summary:** The native exception boundary, build invalidation on vendored source edits, and the 2026-09 allocation-failure probe command.
 
 DRACO-04 and DRACO-06. This change follows cf59489. All compilation and tests run on 192.168.8.212 with Rust 1.94.1 and four workers.
 

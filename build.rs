@@ -1,8 +1,8 @@
 //! Builds Google Draco and the C entry point in `csrc/`.
 //!
 //! Draco comes from `third_party/draco`, a submodule pinned to
-//! `Construkted-Reality/draco` on branch `fix/options-float-precision`. The
-//! fork carries one patch. Read `third_party/draco/CONSTRUKTED-CHANGES.md`
+//! `Construkted-Reality/draco` on branch `fix/rans-bit-encoder-destructor`.
+//! The fork carries two patches. Read `third_party/draco/CONSTRUKTED-CHANGES.md`
 //! before you consider moving the pin.
 //!
 //! `DRACO_TRANSCODER_SUPPORTED` is not optional here.
@@ -51,8 +51,6 @@ fn main() {
         .build();
 
     let build = dst.join("build");
-    println!("cargo:rustc-link-search=native={}", build.display());
-    println!("cargo:rustc-link-lib=static=draco");
 
     cc::Build::new()
         .cpp(true)
@@ -64,6 +62,12 @@ fn main() {
         .include(draco.join("third_party/eigen"))
         .warnings(false)
         .compile("tileforge_draco");
+
+    // GNU ld resolves a static library only against the inputs before it.
+    // The C entry point uses Draco, so Draco comes after it on the link line.
+    // rust-lld accepts either order, which hides a wrong order.
+    println!("cargo:rustc-link-search=native={}", build.display());
+    println!("cargo:rustc-link-lib=static=draco");
 
     // The C entry point is C++, so the standard library has to come after it.
     let target = std::env::var("TARGET").unwrap_or_default();

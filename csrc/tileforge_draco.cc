@@ -14,7 +14,8 @@
 // Everything here is plain C at the boundary. The Rust side owns no C++
 // object and never sees a C++ exception.
 //
-// See docs/design/investigations/2026-08-21-draco-cpp-grid-validation.md.
+// See docs/design/investigations/2026-08-21-draco-cpp-grid-validation.md in
+// the tileforge-mesh repository.
 
 #include <cstdint>
 #include <cstring>
