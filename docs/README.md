@@ -36,7 +36,7 @@ record documents the 0.2.1 open-item fixes. All validation ran on build host .21
 
 ## Open items
 
-- The submodule pin 673ee67 is on the fork branch `fix/rans-bit-encoder-destructor`, which exists only in a local clone. Push that branch to `Construkted-Reality/draco` before a consumer moves its pin. See [reviews/2026-10-05-open-items.md](reviews/2026-10-05-open-items.md).
+- The TFGD dumps of the corpus gate on the build host are a rebuild from decoded tiles, not the original dumps. See the "Testing" section of the [README](../README.md).
 - The allocation probe covers four small meshes. It does not prove recovery from memory exhaustion for every input.
 - Sanitizer runs instrument the C++ code only. Stable Rust cannot instrument the Rust code.
 - The corpus gate checks positions and texture coordinates. The TFGD dumps hold no normals or colors, so the gate does not check them. Renderer fidelity is out of scope.
