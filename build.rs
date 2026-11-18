@@ -1,8 +1,9 @@
 //! Builds Google Draco and the C entry point in `csrc/`.
 //!
 //! Draco comes from `third_party/draco`, a submodule pinned to
-//! `Construkted-Reality/draco` on branch `fix/rans-bit-encoder-destructor`.
-//! The fork carries two patches. Read `third_party/draco/CONSTRUKTED-CHANGES.md`
+//! `Construkted-Reality/draco` on branch `sync/upstream-decoder-checks`.
+//! The fork carries two patches and four upstream commits that add input
+//! validation to the decoder. Read `third_party/draco/CONSTRUKTED-CHANGES.md`
 //! before you consider moving the pin.
 //!
 //! `DRACO_TRANSCODER_SUPPORTED` is not optional here.

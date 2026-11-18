@@ -6,10 +6,10 @@ Contents (`L<n>` is the line number, for a Read offset or `sed -n`):
 - L18 Why this crate is shared
 - L34 What it gives you
 - L72 Build requirements
-- L94 Testing
-- L107 How the callers depend on it
-- L135 Documentation
-- L139 History
+- L99 Testing
+- L112 How the callers depend on it
+- L140 Documentation
+- L144 History
 <!-- doc-index:end -->
 
 A Rust entry point onto Google's C++ Draco. It exists so that two TileForge
@@ -78,12 +78,17 @@ The build compiles Google Draco from source. A host needs:
 3. The submodules. Run `git submodule update --init --recursive`.
 
 `third_party/draco` is a submodule of `Construkted-Reality/draco`, branch
-`fix/rans-bit-encoder-destructor`. That fork carries two patches against
-`google/draco` 1.5.7. Read `third_party/draco/CONSTRUKTED-CHANGES.md` before you
-move the pin. The first patch makes `Options::SetFloat` keep full precision,
-which the grid spacing needs. The second patch keeps the `RAnsBitEncoder`
+`sync/upstream-decoder-checks`. The base of that fork is the `google/draco`
+`main` commit 052a311, which is release 1.5.7 plus 49 `main` commits. The fork
+carries two patches of its own and four upstream commits that add input
+validation to the decoder. Read `third_party/draco/CONSTRUKTED-CHANGES.md`
+before you move the pin. The first patch makes `Options::SetFloat` keep full
+precision, which the grid spacing needs. The second patch keeps the `RAnsBitEncoder`
 destructor free of allocation, so an encode under memory exhaustion returns an
-error instead of terminating the process.
+error instead of terminating the process. The upstream commits make the decoder
+return an error for a bitstream whose sizes, face indices, or entropy coder
+offset are not consistent. They change no encoder code, and a valid bitstream
+decodes as before.
 
 `DRACO_TRANSCODER_SUPPORTED` is not optional. Without it, Draco compiles out
 `ExpertEncoder::SetAttributeGridQuantization`, which is the reason this crate

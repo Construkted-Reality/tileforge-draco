@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-Encoded output does not change for any input that `encode` still accepts. The "Changed" list names the inputs that `encode` now refuses. The record is in pull request 9. Decoded output does not change for any valid bitstream. The record is in pull request 10.
+Encoded output does not change for any input that `encode` still accepts. The "Changed" list names the inputs that `encode` now refuses. The record is in pull request 9. Decoded output does not change for any valid bitstream. The records are in pull requests 10 and 12.
 
 ### Changed
 - The README requires both callers to move to a new revision in one change-set. It no longer lets one caller adopt a revision alone. This is the rule in `docs/cross-cutting-decisions.md` of the umbrella repository. The record is in pull request 11.
@@ -15,6 +15,7 @@ Encoded output does not change for any input that `encode` still accepts. The "C
 - The README states that a caller must bound the output of `decode` for data from an upload.
 
 ### Fixed
+- `decode` returns an error for a bitstream whose sizes, face indices, or entropy coder offset are not consistent. The Draco submodule moves to the fork branch `sync/upstream-decoder-checks`, which adds four upstream commits (dd4ec6c, 0bc8abd, 807217a, 21bace6) with input validation for the decoder.
 - The README and the 0.2.1 entry below agree on the allocation probe: it sweeps an encode and a decode in four configurations, and three single-failure attempts complete with identical output.
 - The documents no longer state that the fork branch of the 0.2.1 pin exists only in a local clone. The branch is on the fork remote.
 - `DecodedMesh::indices` returns decode error code 3 when a face index names no point of the decoded mesh.
