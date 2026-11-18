@@ -43,14 +43,14 @@ record documents the 0.2.1 open-item fixes. All validation ran on build host .21
 
 ## Raw evidence
 
-Raw logs stay outside Git on build host .212. These directories existed on 2026-10-05:
+Raw logs stayed outside Git on build host .212. These directories existed on 2026-10-05:
 
 - `/mnt/data2/draco/review-fixes-20260906/evidence/` (the four 2026-09 records).
 - `/mnt/data2/release-fixes-20261001/evidence/` (the lossless record; shared with other repositories).
 - `/mnt/data2/draco/open-items-20261005/evidence/` (the 2026-10-05 record).
 - `/mnt/data2/gridcorpus/dump/` (932 TFGD corpus files).
 
-On 2026-11-17, none of these directories was on the build host. The corpus directory was rebuilt on that date from decoded tiles; see the "Testing" section of the [README](../README.md). The raw logs of the records are gone.
+On 2026-11-17, none of these directories was on the build host. The corpus directory was rebuilt on that date from decoded tiles; see the "Testing" section of the [README](../README.md). The raw logs of the records are not on the build host.
 
 ## Consumer pins
 

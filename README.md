@@ -7,9 +7,9 @@ Contents (`L<n>` is the line number, for a Read offset or `sed -n`):
 - L34 What it gives you
 - L72 Build requirements
 - L99 Testing
-- L112 How the callers depend on it
-- L140 Documentation
-- L144 History
+- L114 How the callers depend on it
+- L142 Documentation
+- L146 History
 <!-- doc-index:end -->
 
 A Rust entry point onto Google's C++ Draco. It exists so that two TileForge
@@ -107,7 +107,9 @@ cargo test --release --test grid_corpus -- --ignored --nocapture
 
 Compile and test on build host .212, not on a desktop. This repository has no continuous integration, so these commands are the gates. The corpus gate in `tests/grid_corpus.rs` is ignored by default. It reads TFGD mesh dumps from `/mnt/data2/gridcorpus/dump/` on .212 (932 files) and checks grid positions and texture coordinates at 10 to 16 bits. It takes about 7 minutes on an idle host.
 
-The original dumps are not on the build host. On 2026-11-17 the directory was rebuilt from the Draco tiles of a preserved tileset of the same 932-tile model: each tile was decoded with this crate and written in the TFGD layout that the gate reads. The rebuilt dumps hold decoded values, so their positions and texture coordinates are already on a lattice. `tests/native_allocation.cc` is a standalone allocation-failure probe, and `tests/native_grid_domain.cc` sends grid encodes at the edges of the native domain to Draco for sanitizer runs; [docs/reviews/2026-10-05-open-items.md](docs/reviews/2026-10-05-open-items.md) has its compile command and the sanitizer settings.
+The original dumps are not on the build host. On 2026-11-17 an agent rebuilt the directory from the Draco tiles of a preserved tileset of the same 932-tile model. The agent decoded each tile with this crate and wrote it in the TFGD layout that the gate reads. The rebuilt dumps hold decoded values, so their positions and texture coordinates are already on a lattice.
+
+`tests/native_allocation.cc` is a standalone allocation-failure probe, and `tests/native_grid_domain.cc` sends grid encodes at the edges of the native domain to Draco for sanitizer runs; [docs/reviews/2026-10-05-open-items.md](docs/reviews/2026-10-05-open-items.md) has its compile command and the sanitizer settings.
 
 ## How the callers depend on it
 
@@ -120,14 +122,14 @@ To move both callers onto a new revision:
 1. Merge the change here and note the new commit SHA.
 2. Update the `rev` in `tileforge-mesh/Cargo.toml`.
 3. Update the `rev` in `tileforge-optimize/Cargo.toml`.
-4. Run the seam tests in each caller before you merge either one. In `tileforge-optimize` that is
+4. Regenerate `Cargo.lock` in each caller and check it on the build host with `cargo metadata --locked`.
+5. Run the seam tests in each caller before you merge either one. In `tileforge-optimize` that is
    `tests/shared_grid.rs`. In `tileforge-mesh` it is the lattice tests in
    `crates/tileforge-glb/src/mesh_quantize.rs`.
-5. Regenerate `Cargo.lock` in each caller and check it on the build host with `cargo metadata --locked`.
 
 A revision that moves the Draco submodule, or that changes `encode` or `decode`, needs this evidence before either caller merges:
 
-1. Encode identity in this crate. Encode the corpus with the old revision and the new revision in the configurations that the callers use. Every encoded buffer must be byte-identical. Run the corpus gate.
+1. Encode identity in this crate. Encode the corpus with the old revision and the new revision in the configurations that the callers use, at least the five configurations of the 0.2.1 record (4,650 buffers). Every encoded buffer must be byte-identical. Run the corpus gate.
 2. Encode identity in each caller: the goldens and the determinism gate of `tileforge-mesh`, and the customer corpora of `tileforge-optimize`. A buffer that differs stops the move until two proofs exist: the new output is correct, and the old output was incorrect.
 3. Decode identity. Decode existing tiles and Draco files from other encoders with both revisions. Points, faces, indices, and attribute values must be equal.
 4. The fork patches hold: `options_test` passes in the Draco unit tests, and the allocation probe reports no defect.
@@ -135,7 +137,7 @@ A revision that moves the Draco submodule, or that changes `encode` or `decode`,
 
 To take changes from `google/draco` into the fork, follow "How to take further upstream changes" in `third_party/draco/CONSTRUKTED-CHANGES.md`. Then move the submodule pointer and the `branch` in `.gitmodules` here, and collect the evidence above.
 
-Move both callers in one change-set, for every revision. The rule is in `docs/cross-cutting-decisions.md` in the umbrella repository. When you move the pin, move the `rev` of every caller in the same change-set. Run the gates of each caller before you merge any of them. The seam tests in step 4 are part of those gates. A caller does not adopt a revision alone, even when the revision only adds an encoding mode. Two callers on two revisions build two Draco versions. No test compares the two versions.
+Move both callers in one change-set, for every revision. The rule is in `docs/cross-cutting-decisions.md` in the umbrella repository. When you move the pin, move the `rev` of every caller in the same change-set. Run the gates of each caller before you merge any of them. The seam tests in step 5 are part of those gates. A caller does not adopt a revision alone, even when the revision only adds an encoding mode. Two callers on two revisions build two Draco versions. No test compares the two versions.
 
 ## Documentation
 

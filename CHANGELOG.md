@@ -12,6 +12,7 @@ Encoded output does not change for any input that `encode` still accepts. The "C
 ### Added
 - `LICENSE` holds the MIT License of this repository. `NOTICE` names the licences of the Draco source and of its dependencies, which the build compiles from the submodule.
 - The README lists the evidence that a pin move needs, and names the procedure for changes from `google/draco`.
+- The README states that the corpus dumps on the build host are a rebuild from decoded tiles, and that the repository has no continuous integration. The document map states that the raw evidence directories of the earlier records are not on the build host.
 - The README states that a caller must bound the output of `decode` for data from an upload.
 
 ### Fixed

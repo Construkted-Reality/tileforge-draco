@@ -18,13 +18,15 @@ licence, and the MIT License of this repository does not replace it.
 2. Eigen 3.4.0 (headers, used by Draco)
    Mozilla Public License, Version 2.0, for most files:
    third_party/draco/third_party/eigen/COPYING.MPL2.
-   third_party/draco/third_party/eigen/COPYING.README names the files under
-   other licences.
+   third_party/draco/third_party/eigen/COPYING.README states that some files
+   contain code under BSD or LGPL licences. The other COPYING files in that
+   directory hold those licence texts.
 
 3. tinygltf (headers, used by Draco)
    MIT License: third_party/draco/third_party/tinygltf/LICENSE.
-   tinygltf includes json.hpp (MIT License) and stb_image (public domain or
-   MIT License). Each file states its licence in its header.
+   tinygltf includes json.hpp (MIT License), stb_image.h, and
+   stb_image_write.h (public domain or MIT License). Each file states its
+   licence in the file.
 
 4. gulrak/filesystem (headers, used by Draco)
    MIT License: third_party/draco/third_party/filesystem/LICENSE.

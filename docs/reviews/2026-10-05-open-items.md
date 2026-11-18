@@ -16,7 +16,7 @@ Contents (`L<n>` is the line number, for a Read offset or `sed -n`):
 
 Date: 2026-10-05. Native validation host: 192.168.8.212. Rust 1.94.1, four workers.
 
-Source: `/mnt/data2/draco/open-items-20261005/source`. Targets: `target` (unsanitized), `target-san` (sanitized), and `target-bfd` (GNU ld). Raw logs: `/mnt/data2/draco/open-items-20261005/evidence/`. They stay outside Git. On 2026-11-17 the directory `/mnt/data2/draco/` was not on the build host, so the source, the targets, and the raw logs of this record are gone.
+Source: `/mnt/data2/draco/open-items-20261005/source`. Targets: `target` (unsanitized), `target-san` (sanitized), and `target-bfd` (GNU ld). Raw logs: `/mnt/data2/draco/open-items-20261005/evidence/`. They stay outside Git. On 2026-11-17 the directory `/mnt/data2/draco/` was not on the build host, so the source, the targets, and the raw logs of this record are not on the build host.
 
 ## Persistent allocation failure
 
