@@ -217,8 +217,10 @@ pub struct Attribute<'a> {
     /// `None` lets Draco fit the attribute's own bounding box. Two tiles then
     /// get two lattices and a shared value lands in two places.
     ///
-    /// [`encode`] refuses a value outside the cube. The native quantizer does
-    /// not clamp, and it has no index for such a value.
+    /// [`encode`] refuses a value outside the cube, so that every tile keeps
+    /// its values on the same lattice inside the cube. The native quantizer
+    /// does not clamp. It puts a value near the cube on the lattice past the
+    /// edge, and it has no index for a value far from the cube.
     ///
     /// Positions ignore this. They take [`EncodeOptions::position`]. Normals
     /// and unquantized attributes ignore it too, because the native codec
@@ -241,9 +243,9 @@ impl<'a> Attribute<'a> {
     /// Texture coordinates in the unit square, two floats per vertex.
     ///
     /// The lattice is the unit square itself, not the tile's own range, so
-    /// every tile places a given texture coordinate at the same point. Draco
-    /// does not clamp, so [`encode`] refuses a value outside the unit square.
-    /// Check the input before you call this.
+    /// every tile places a given texture coordinate at the same point.
+    /// [`encode`] refuses a value outside the unit square. Check the input
+    /// before you call this.
     pub fn unit_tex_coords(data: &'a [f32], bits: i32) -> Self {
         const ORIGIN: [f32; 2] = [0.0, 0.0];
         Self {

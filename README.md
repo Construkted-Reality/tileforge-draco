@@ -5,11 +5,11 @@ Contents (`L<n>` is the line number, for a Read offset or `sed -n`):
 
 - L18 Why this crate is shared
 - L34 What it gives you
-- L69 Build requirements
-- L91 Testing
-- L102 How the callers depend on it
-- L119 Documentation
-- L123 History
+- L72 Build requirements
+- L94 Testing
+- L105 How the callers depend on it
+- L122 Documentation
+- L126 History
 <!-- doc-index:end -->
 
 A Rust entry point onto Google's C++ Draco. It exists so that two TileForge
@@ -49,7 +49,10 @@ no test in either repository would notice.
 
 - The values span more than the largest finite float, so the fitted range is not finite.
 - The range is so small that the number of steps per unit is not finite.
-- A value is outside the explicit cube of its attribute. For `Attribute::unit_tex_coords` that is the unit square. An unquantized attribute, a normal, and a position do not use the cube.
+
+`encode` returns the same error for three contract rules of this crate:
+
+- A value is outside the explicit cube of its attribute. For `Attribute::unit_tex_coords` that is the unit square. The native quantizer does not clamp: it puts a value near the cube on the lattice past the edge, and it has no index for a value far from the cube. The crate refuses both, so every tile keeps its values inside the cube. An unquantized attribute, a normal, and a position do not use the cube.
 - A bit count is outside 0 to 30 (1 to 30 for positions), or the speed is outside 0 to 10.
 - A vertex, triangle, or attribute count does not fit in 32 bits.
 
