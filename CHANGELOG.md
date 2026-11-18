@@ -5,6 +5,7 @@
 Encoded output does not change for any input that `encode` still accepts. The "Changed" list names the inputs that `encode` now refuses. The record is in pull request 9. Decoded output does not change for any valid bitstream. The record is in pull request 10.
 
 ### Changed
+- The README requires both callers to move to a new revision in one change-set. It no longer lets one caller adopt a revision alone. This is the rule in `docs/cross-cutting-decisions.md` of the umbrella repository. The record is in pull request 11.
 - `power_of_two_at_most` returns `Result<f32, DracoError>`. A target that is not finite and positive returns argument error code 1 instead of a panic. Callers must handle the result.
 - `encode` refuses a value outside the explicit cube of a quantized attribute, a bit count outside 0 to 30, and a speed outside 0 to 10, with argument error code 1. Before this change the native codec accepted these inputs without a documented result.
 

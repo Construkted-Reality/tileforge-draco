@@ -130,7 +130,7 @@ A revision that moves the Draco submodule, or that changes `encode` or `decode`,
 
 To take changes from `google/draco` into the fork, follow "How to take further upstream changes" in `third_party/draco/CONSTRUKTED-CHANGES.md`. Then move the submodule pointer and the `branch` in `.gitmodules` here, and collect the evidence above.
 
-When a revision changes grid arithmetic, update both callers together. A revision that adds a separate encoding mode can be adopted independently if the existing grid behavior remains unchanged and the seam tests pass.
+Move both callers in one change-set, for every revision. The rule is in `docs/cross-cutting-decisions.md` in the umbrella repository. When you move the pin, move the `rev` of every caller in the same change-set. Run the gates of each caller before you merge any of them. The seam tests in step 4 are part of those gates. A caller does not adopt a revision alone, even when the revision only adds an encoding mode. Two callers on two revisions build two Draco versions. No test compares the two versions.
 
 ## Documentation
 
