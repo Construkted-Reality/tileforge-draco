@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-Encoded output does not change for any input that encoded correctly before. The record is in pull request 9.
+Encoded output does not change for any input that `encode` still accepts. The "Changed" list names the inputs that `encode` now refuses. The record is in pull request 9.
 
 ### Changed
 - `power_of_two_at_most` returns `Result<f32, DracoError>`. A target that is not finite and positive returns argument error code 1 instead of a panic. Callers must handle the result.
