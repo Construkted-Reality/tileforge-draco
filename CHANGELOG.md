@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-Encoded output does not change for any input that `encode` still accepts. The "Changed" list names the inputs that `encode` now refuses. The record is in pull request 9. Decoded output does not change for any valid bitstream. The record is in pull request 10.
+Encoded output does not change for any input that `encode` still accepts. The "Changed" list names the inputs that `encode` now refuses. The record is in pull request 9. Decoded output does not change for any valid bitstream. The records are in pull requests 10 and 12.
 
 ### Changed
 - The README requires both callers to move to a new revision in one change-set. It no longer lets one caller adopt a revision alone. This is the rule in `docs/cross-cutting-decisions.md` of the umbrella repository. The record is in pull request 11.
@@ -13,6 +13,7 @@ Encoded output does not change for any input that `encode` still accepts. The "C
 - The README states that a caller must bound the output of `decode` for data from an upload.
 
 ### Fixed
+- `decode` returns an error for a bitstream whose sizes, face indices, or entropy coder offset are not consistent. The Draco submodule moves to the fork branch `sync/upstream-decoder-checks`, which adds four upstream commits (dd4ec6c, 0bc8abd, 807217a, 21bace6) with input validation for the decoder.
 - `DecodedMesh::indices` returns decode error code 3 when a face index names no point of the decoded mesh.
 - `DecodedMesh::indices`, `read_f32`, and `read_u32` return internal error code 5 when the memory for the result is not available. `read_f32` and `read_u32` refuse more than four components before they size a buffer.
 - `encode` refuses a quantized attribute, and positions under `Quantization::Bits`, when the fitted range is not finite or the number of steps per unit is not finite. Before this change the native codec received such data and stopped the process or produced unusable output.

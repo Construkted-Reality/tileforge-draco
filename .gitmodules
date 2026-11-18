@@ -1,4 +1,4 @@
 [submodule "third_party/draco"]
 	path = third_party/draco
 	url = https://github.com/Construkted-Reality/draco.git
-	branch = fix/rans-bit-encoder-destructor
+	branch = sync/upstream-decoder-checks
