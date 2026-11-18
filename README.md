@@ -82,8 +82,8 @@ The build compiles Google Draco from source. A host needs:
 `main` commit 052a311, which is release 1.5.7 plus 49 `main` commits. The fork
 carries two patches of its own and four upstream commits that add input
 validation to the decoder. Read `third_party/draco/CONSTRUKTED-CHANGES.md`
-before you move the pin. The first patch makes `Options::SetFloat` keep full precision,
-which the grid spacing needs. The second patch keeps the `RAnsBitEncoder`
+before you move the pin. The first patch makes `Options::SetFloat` keep full
+precision, which the grid spacing needs. The second patch keeps the `RAnsBitEncoder`
 destructor free of allocation, so an encode under memory exhaustion returns an
 error instead of terminating the process. The upstream commits make the decoder
 return an error for a bitstream whose sizes, face indices, or entropy coder
