@@ -540,8 +540,18 @@ impl DecodedMesh {
     }
 
     /// Triangle indices, three per face.
+    ///
+    /// # Errors
+    ///
+    /// Returns code 3 when an index is not below [`DecodedMesh::num_points`].
+    /// The bitstream stores its indices and its point count separately, so a
+    /// damaged bitstream can hold an index that names no point. Returns code 5
+    /// when the memory for the indices is not available.
     pub fn indices(&self) -> Result<Vec<u32>, DracoError> {
-        let mut out = vec![0u32; self.num_faces() as usize * 3];
+        let len = (self.num_faces() as usize)
+            .checked_mul(3)
+            .ok_or_else(count_overflow)?;
+        let mut out = zeroed::<u32>(len)?;
         // SAFETY: `out` holds exactly the count the C side writes.
         let code = unsafe { ffi::tf_draco_decoded_indices(self.raw, out.as_mut_ptr()) };
         if code != ffi::TF_DRACO_OK {
@@ -550,6 +560,7 @@ impl DecodedMesh {
                 message: "cannot read indices".to_string(),
             });
         }
+        check_face_indices(&out, self.num_points())?;
         Ok(out)
     }
 
@@ -570,9 +581,14 @@ impl DecodedMesh {
     }
 
     /// Reads an attribute as floats, one entry per point, in point order.
+    ///
+    /// # Errors
+    ///
+    /// Returns code 1 when no attribute has this unique id, code 4 when the
+    /// attribute has more than four components, code 3 when a value does not
+    /// convert, and code 5 when the memory for the values is not available.
     pub fn read_f32(&self, unique_id: u32) -> Result<Vec<f32>, DracoError> {
-        let components = self.components_or_err(unique_id)?;
-        let mut out = vec![0f32; self.num_points() as usize * components];
+        let mut out = zeroed::<f32>(self.value_count(unique_id)?)?;
         let mut err = [0 as c_char; ERR_LEN];
         // SAFETY: `out` holds num_points * components floats, which is what
         // the C side writes.
@@ -596,8 +612,7 @@ impl DecodedMesh {
 
     /// The same, as unsigned 32-bit integers.
     pub fn read_u32(&self, unique_id: u32) -> Result<Vec<u32>, DracoError> {
-        let components = self.components_or_err(unique_id)?;
-        let mut out = vec![0u32; self.num_points() as usize * components];
+        let mut out = zeroed::<u32>(self.value_count(unique_id)?)?;
         let mut err = [0 as c_char; ERR_LEN];
         // SAFETY: as in read_f32.
         let code = unsafe {
@@ -618,10 +633,63 @@ impl DecodedMesh {
         Ok(out)
     }
 
-    fn components_or_err(&self, unique_id: u32) -> Result<usize, DracoError> {
-        self.attribute(unique_id)
-            .map(|(_, c)| c)
-            .ok_or_else(|| argument(&format!("no attribute with unique id {unique_id}")))
+    /// The number of values that an accessor returns for this attribute.
+    fn value_count(&self, unique_id: u32) -> Result<usize, DracoError> {
+        let (_, components) = self
+            .attribute(unique_id)
+            .ok_or_else(|| argument(&format!("no attribute with unique id {unique_id}")))?;
+        checked_value_count(self.num_points(), components)
+    }
+}
+
+/// The largest component count that the native accessors read.
+const MAX_ACCESSOR_COMPONENTS: usize = 4;
+
+// The native accessors refuse an attribute with more than four components.
+// This refuses it first, so no buffer is sized from a component count that
+// the native accessors refuse.
+fn checked_value_count(num_points: u32, components: usize) -> Result<usize, DracoError> {
+    if components > MAX_ACCESSOR_COMPONENTS {
+        return Err(DracoError {
+            code: ffi::TF_DRACO_ERR_UNSUPPORTED,
+            message: "attribute has more than four components".to_string(),
+        });
+    }
+    (num_points as usize)
+        .checked_mul(components)
+        .ok_or_else(count_overflow)
+}
+
+fn check_face_indices(indices: &[u32], num_points: u32) -> Result<(), DracoError> {
+    match indices.iter().find(|&&i| i >= num_points) {
+        Some(bad) => Err(DracoError {
+            code: ffi::TF_DRACO_ERR_DECODE,
+            message: format!("face index {bad} is past the last of {num_points} points"),
+        }),
+        None => Ok(()),
+    }
+}
+
+/// A buffer of `len` zeros, or an error when the memory is not available. A
+/// bitstream declares its own counts, so the size is not under our control.
+fn zeroed<T: Clone + Default>(len: usize) -> Result<Vec<T>, DracoError> {
+    let mut out = Vec::new();
+    out.try_reserve_exact(len).map_err(|_| out_of_memory(len))?;
+    out.resize(len, T::default());
+    Ok(out)
+}
+
+fn count_overflow() -> DracoError {
+    DracoError {
+        code: ffi::TF_DRACO_ERR_INTERNAL,
+        message: "the decoded value count does not fit in memory".to_string(),
+    }
+}
+
+fn out_of_memory(len: usize) -> DracoError {
+    DracoError {
+        code: ffi::TF_DRACO_ERR_INTERNAL,
+        message: format!("out of memory for {len} decoded values"),
     }
 }
 
@@ -1229,6 +1297,33 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.message.contains("past the last"), "{err}");
+    }
+
+    #[test]
+    fn an_accessor_refuses_more_than_four_components_before_it_sizes_a_buffer() {
+        assert_eq!(checked_value_count(7, 4), Ok(28));
+        assert_eq!(checked_value_count(0, 4), Ok(0));
+        let error = checked_value_count(7, 5).unwrap_err();
+        assert_eq!(error.code, 4);
+        assert!(error.message.contains("four components"), "{error}");
+    }
+
+    #[test]
+    fn an_accessor_buffer_that_cannot_be_reserved_is_an_error() {
+        assert_eq!(zeroed::<u32>(3), Ok(vec![0, 0, 0]));
+        // No allocator can hold this many four-byte values.
+        let error = zeroed::<f32>(usize::MAX).unwrap_err();
+        assert_eq!(error.code, 5);
+        assert!(error.message.contains("out of memory"), "{error}");
+    }
+
+    #[test]
+    fn face_indices_must_name_a_point() {
+        assert_eq!(check_face_indices(&[0, 1, 2, 2, 1, 0], 3), Ok(()));
+        assert_eq!(check_face_indices(&[], 0), Ok(()));
+        let error = check_face_indices(&[0, 1, 3], 3).unwrap_err();
+        assert_eq!(error.code, 3);
+        assert!(error.message.contains("face index 3"), "{error}");
     }
 
     #[test]
