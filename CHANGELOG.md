@@ -2,18 +2,18 @@
 
 ## [Unreleased]
 
-Encoded output does not change for any input that `encode` still accepts. The "Changed" list names the inputs that `encode` now refuses. The record is in pull request 9.
+Encoded output does not change for any input that `encode` still accepts. The "Changed" list names the inputs that `encode` now refuses. The record is in pull request 9. Decoded output does not change for any valid bitstream. The record is in pull request 10.
 
 ### Changed
 - `power_of_two_at_most` returns `Result<f32, DracoError>`. A target that is not finite and positive returns argument error code 1 instead of a panic. Callers must handle the result.
 - `encode` refuses a value outside the explicit cube of a quantized attribute, a bit count outside 0 to 30, and a speed outside 0 to 10, with argument error code 1. Before this change the native codec accepted these inputs without a documented result.
 
 ### Added
-- `DecodedMesh::indices` returns decode error code 3 when a face index names no point of the decoded mesh.
-- `DecodedMesh::indices`, `read_f32`, and `read_u32` return internal error code 5 when the memory for the result is not available. `read_f32` and `read_u32` refuse more than four components before they size a buffer.
 - The README states that a caller must bound the output of `decode` for data from an upload.
 
 ### Fixed
+- `DecodedMesh::indices` returns decode error code 3 when a face index names no point of the decoded mesh.
+- `DecodedMesh::indices`, `read_f32`, and `read_u32` return internal error code 5 when the memory for the result is not available. `read_f32` and `read_u32` refuse more than four components before they size a buffer.
 - `encode` refuses a quantized attribute, and positions under `Quantization::Bits`, when the fitted range is not finite or the number of steps per unit is not finite. Before this change the native codec received such data and stopped the process or produced unusable output.
 - `encode` checks the vertex, triangle, and attribute counts against the native 32-bit fields.
 

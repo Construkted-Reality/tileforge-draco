@@ -550,7 +550,7 @@ impl DecodedMesh {
     pub fn indices(&self) -> Result<Vec<u32>, DracoError> {
         let len = (self.num_faces() as usize)
             .checked_mul(3)
-            .ok_or_else(|| out_of_memory(usize::MAX))?;
+            .ok_or_else(count_overflow)?;
         let mut out = zeroed::<u32>(len)?;
         // SAFETY: `out` holds exactly the count the C side writes.
         let code = unsafe { ffi::tf_draco_decoded_indices(self.raw, out.as_mut_ptr()) };
@@ -646,8 +646,8 @@ impl DecodedMesh {
 const MAX_ACCESSOR_COMPONENTS: usize = 4;
 
 // The native accessors refuse an attribute with more than four components.
-// This refuses it first, so no buffer is sized from the component count of a
-// bitstream.
+// This refuses it first, so no buffer is sized from a component count that
+// the native accessors refuse.
 fn checked_value_count(num_points: u32, components: usize) -> Result<usize, DracoError> {
     if components > MAX_ACCESSOR_COMPONENTS {
         return Err(DracoError {
@@ -657,7 +657,7 @@ fn checked_value_count(num_points: u32, components: usize) -> Result<usize, Drac
     }
     (num_points as usize)
         .checked_mul(components)
-        .ok_or_else(|| out_of_memory(usize::MAX))
+        .ok_or_else(count_overflow)
 }
 
 fn check_face_indices(indices: &[u32], num_points: u32) -> Result<(), DracoError> {
@@ -677,6 +677,13 @@ fn zeroed<T: Clone + Default>(len: usize) -> Result<Vec<T>, DracoError> {
     out.try_reserve_exact(len).map_err(|_| out_of_memory(len))?;
     out.resize(len, T::default());
     Ok(out)
+}
+
+fn count_overflow() -> DracoError {
+    DracoError {
+        code: ffi::TF_DRACO_ERR_INTERNAL,
+        message: "the decoded value count does not fit in memory".to_string(),
+    }
 }
 
 fn out_of_memory(len: usize) -> DracoError {
