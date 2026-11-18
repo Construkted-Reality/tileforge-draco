@@ -117,7 +117,7 @@ To move both callers onto a new revision:
    `tests/shared_grid.rs`. In `tileforge-mesh` it is the lattice tests in
    `crates/tileforge-glb/src/mesh_quantize.rs`.
 
-When a revision changes grid arithmetic, update both callers together. A revision that adds a separate encoding mode can be adopted independently if the existing grid behavior remains unchanged and the seam tests pass.
+Move both callers in one change-set, for every revision. The rule is in `docs/cross-cutting-decisions.md` in the umbrella repository. When you move the pin, move the `rev` of every caller in the same change-set. Run the gates of each caller before you merge any of them. The seam tests in step 4 are part of those gates. A caller does not adopt a revision alone, even when the revision only adds an encoding mode. Two callers on two revisions build two Draco versions. No test compares the two versions.
 
 ## Documentation
 
