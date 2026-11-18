@@ -20,7 +20,7 @@ licence, and the MIT License of this repository does not replace it.
    third_party/draco/third_party/eigen/COPYING.MPL2.
    third_party/draco/third_party/eigen/COPYING.README states that some files
    contain code under BSD or LGPL licences. The other COPYING files in that
-   directory hold those licence texts.
+   directory hold the licence texts.
 
 3. tinygltf (headers, used by Draco)
    MIT License: third_party/draco/third_party/tinygltf/LICENSE.
