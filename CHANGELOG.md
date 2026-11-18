@@ -10,6 +10,7 @@ Encoded output does not change for any input that `encode` still accepts. The "C
 
 ### Added
 - The README states that a caller must bound the output of `decode` for data from an upload.
+- The Draco submodule moves to the fork branch `sync/upstream-decoder-checks`. The branch adds four upstream commits (dd4ec6c, 0bc8abd, 807217a, 21bace6) that add input validation to the decoder. `decode` returns an error for a bitstream whose sizes, face indices, or entropy coder offset are not consistent. The record is in pull request 12.
 
 ### Fixed
 - `DecodedMesh::indices` returns decode error code 3 when a face index names no point of the decoded mesh.
