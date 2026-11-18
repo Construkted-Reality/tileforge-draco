@@ -50,6 +50,8 @@ Raw logs stay outside Git on build host .212. These directories existed on 2026-
 - `/mnt/data2/draco/open-items-20261005/evidence/` (the 2026-10-05 record).
 - `/mnt/data2/gridcorpus/dump/` (932 TFGD corpus files).
 
+On 2026-11-17, none of these directories was on the build host. The corpus directory was rebuilt on that date from decoded tiles; see the "Testing" section of the [README](../README.md). The raw logs of the records are gone.
+
 ## Consumer pins
 
 Consumers pin this crate by Git revision in `tileforge-mesh/Cargo.toml` and
