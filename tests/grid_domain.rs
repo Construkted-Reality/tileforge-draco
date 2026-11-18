@@ -49,9 +49,9 @@ fn subnormal_power_helpers_preserve_positive_targets() {
     for bit in 0..23 {
         let power = f32::from_bits(1 << bit);
         assert!(is_power_of_two(power));
-        assert_eq!(power_of_two_at_most(power), power);
+        assert_eq!(power_of_two_at_most(power), Ok(power));
         let target = f32::from_bits((1 << (bit + 1)) - 1);
-        assert_eq!(power_of_two_at_most(target), power);
+        assert_eq!(power_of_two_at_most(target), Ok(power));
         assert!(
             Quantization::grid(power).is_err(),
             "native grid needs a normal spacing"

@@ -62,9 +62,9 @@ pub enum Quantization {
     /// the bit count. Neighboring tiles use the same lattice when they share
     /// a spacing and pre-snapped input.
     Grid { spacing: f32 },
-    /// Fit the mesh's own bounding box into this many bits. Every mesh gets a
-    /// different lattice, so every shared vertex moves. Kept for measurement
-    /// and for a caller that encodes a single whole model.
+    /// Fit the mesh's own bounding box into this many bits, 1 to 30. Every
+    /// mesh gets a different lattice, so every shared vertex moves. Kept for
+    /// measurement and for a caller that encodes a single whole model.
     Bits { bits: i32 },
     /// Preserve finite position values without quantization. Draco can reorder
     /// vertices and faces. Other attributes retain their own quantization.
@@ -110,17 +110,24 @@ pub fn is_power_of_two(v: f32) -> bool {
 ///
 /// Use it to turn a step derived from the data into one that decodes exactly.
 /// It rounds down, never up, so the result is never coarser than asked.
-pub fn power_of_two_at_most(target: f32) -> f32 {
-    assert!(
-        target.is_finite() && target > 0.0,
-        "target must be positive"
-    );
+///
+/// # Errors
+///
+/// Returns code 1 when `target` is not finite or not positive. No power of two
+/// is at most zero, and a caller that derives the step from its data can
+/// arrive at such a target.
+pub fn power_of_two_at_most(target: f32) -> Result<f32, DracoError> {
+    if !target.is_finite() || target <= 0.0 {
+        return Err(argument(&format!(
+            "a power-of-two target must be finite and positive, not {target}"
+        )));
+    }
     let bits = target.to_bits();
-    if target.is_normal() {
+    Ok(if target.is_normal() {
         f32::from_bits(bits & 0x7f80_0000)
     } else {
         f32::from_bits(1 << (31 - bits.leading_zeros()))
-    }
+    })
 }
 
 /// Rounds every position onto the global grid of `spacing`.
@@ -198,7 +205,8 @@ impl AttributeType {
 pub struct Attribute<'a> {
     pub kind: AttributeType,
     pub components: usize,
-    /// 0 leaves the attribute unquantized.
+    /// 0 leaves the attribute unquantized. The native codec takes 1 to 30
+    /// bits, and [`encode`] refuses any other count.
     pub quantization_bits: i32,
     pub data: &'a [f32],
     /// When `Some`, quantize onto the cube of side `range` anchored at
@@ -209,7 +217,14 @@ pub struct Attribute<'a> {
     /// `None` lets Draco fit the attribute's own bounding box. Two tiles then
     /// get two lattices and a shared value lands in two places.
     ///
-    /// Positions ignore this. They take [`EncodeOptions::position`].
+    /// [`encode`] refuses a value outside the cube, so that every tile keeps
+    /// its values on the same lattice inside the cube. The native quantizer
+    /// does not clamp. It puts a value near the cube on the lattice past the
+    /// edge, and it has no index for a value far from the cube.
+    ///
+    /// Positions ignore this. They take [`EncodeOptions::position`]. Normals
+    /// and unquantized attributes ignore it too, because the native codec
+    /// reads no lattice for them.
     pub explicit: Option<(&'a [f32], f32)>,
 }
 
@@ -228,9 +243,9 @@ impl<'a> Attribute<'a> {
     /// Texture coordinates in the unit square, two floats per vertex.
     ///
     /// The lattice is the unit square itself, not the tile's own range, so
-    /// every tile places a given texture coordinate at the same point. Draco
-    /// does not clamp, so a value outside the unit square would fold onto the
-    /// wrong texel. Check the input before you call this.
+    /// every tile places a given texture coordinate at the same point.
+    /// [`encode`] refuses a value outside the unit square. Check the input
+    /// before you call this.
     pub fn unit_tex_coords(data: &'a [f32], bits: i32) -> Self {
         const ORIGIN: [f32; 2] = [0.0, 0.0];
         Self {
@@ -258,7 +273,8 @@ pub struct MeshView<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct EncodeOptions {
     pub position: Quantization,
-    /// Draco's own scale: 0 is slowest and smallest, 10 is fastest.
+    /// Draco's own scale: 0 is slowest and smallest, 10 is fastest. [`encode`]
+    /// refuses a speed outside 0 to 10.
     pub speed: i32,
 }
 
@@ -282,8 +298,25 @@ pub struct Encoded {
     pub unique_ids: Vec<u32>,
 }
 
-/// Compresses one mesh. Attribute values and explicit origins must be finite.
-/// Explicit ranges must be finite and positive. Invalid input returns code 1.
+/// Compresses one mesh.
+///
+/// # Errors
+///
+/// Invalid input returns code 1 before the native codec runs:
+///
+/// - an attribute value or an explicit origin that is not finite, or an
+///   explicit range that is not finite and positive;
+/// - a quantized attribute, or positions under [`Quantization::Bits`], whose
+///   values span more than the largest finite float, or so little that the
+///   number of steps per unit is not finite;
+/// - a value outside the explicit cube of a quantized attribute;
+/// - a bit count outside 0 to 30 (1 to 30 for positions), or a speed outside
+///   0 to 10;
+/// - counts that do not fit the native 32-bit fields, mismatched lengths, or
+///   an index past the last vertex;
+/// - a grid outside the native arithmetic domain.
+///
+/// A failure inside the native codec returns one of the other codes.
 pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, DracoError> {
     let num_vertices = mesh.num_vertices;
     if !mesh.indices.len().is_multiple_of(3) {
@@ -291,6 +324,19 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
     }
     if num_vertices == 0 || mesh.indices.is_empty() {
         return Err(argument("mesh has no vertices or no triangles"));
+    }
+    // The native entry point takes 32-bit counts.
+    let (Ok(c_num_vertices), Ok(c_num_faces), Ok(c_num_attributes)) = (
+        u32::try_from(num_vertices),
+        u32::try_from(mesh.indices.len() / 3),
+        u32::try_from(mesh.attributes.len()),
+    ) else {
+        return Err(argument(
+            "vertex, triangle, and attribute counts must fit in 32 bits",
+        ));
+    };
+    if !(0..=10).contains(&opts.speed) {
+        return Err(argument(&format!("speed {} must be 0 to 10", opts.speed)));
     }
     if mesh
         .attributes
@@ -328,7 +374,7 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
                 att.kind
             )));
         }
-        if att.data.len() != num_vertices * att.components {
+        if num_vertices.checked_mul(att.components) != Some(att.data.len()) {
             return Err(argument(&format!(
                 "attribute {:?} holds {} floats, not {} vertices times {} components",
                 att.kind,
@@ -337,6 +383,20 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
                 att.components
             )));
         }
+        // Positions take their quantization from the options, below.
+        if att.kind != AttributeType::Position {
+            if !(0..=MAX_QUANTIZATION_BITS).contains(&att.quantization_bits) {
+                return Err(argument(&format!(
+                    "attribute {:?} has a bit count of {}, not 0 to {MAX_QUANTIZATION_BITS}",
+                    att.kind, att.quantization_bits
+                )));
+            }
+            // The native codec stores an attribute with zero bits as floats,
+            // and it packs normals onto an octahedron. Neither reads a range.
+            if att.quantization_bits > 0 && att.kind != AttributeType::Normal {
+                validate_quantization_domain(att, att.quantization_bits, att.explicit)?;
+            }
+        }
     }
     if let Some(&bad) = mesh.indices.iter().find(|&&i| i as usize >= num_vertices) {
         return Err(argument(&format!(
@@ -344,6 +404,14 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
         )));
     }
 
+    // Exactly one attribute is a position, as checked above.
+    let Some(positions) = mesh
+        .attributes
+        .iter()
+        .find(|a| a.kind == AttributeType::Position)
+    else {
+        return Err(argument("a mesh needs exactly one position attribute"));
+    };
     let position_spacing = match opts.position {
         Quantization::Grid { spacing } => {
             if !spacing.is_normal() || !is_power_of_two(spacing) {
@@ -358,15 +426,16 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
             if bits <= 0 {
                 return Err(argument("a bit count must be positive"));
             }
+            if bits > MAX_QUANTIZATION_BITS {
+                return Err(argument(&format!(
+                    "a position bit count of {bits} is above {MAX_QUANTIZATION_BITS}"
+                )));
+            }
+            validate_quantization_domain(positions, bits, None)?;
             0.0
         }
     };
     if position_spacing > 0.0 {
-        let positions = mesh
-            .attributes
-            .iter()
-            .find(|a| a.kind == AttributeType::Position)
-            .unwrap();
         if positions.components != 3 {
             return Err(argument("grid positions need three components"));
         }
@@ -399,10 +468,10 @@ pub fn encode(mesh: MeshView<'_>, opts: &EncodeOptions) -> Result<Encoded, Draco
 
     let c_mesh = ffi::TfDracoMesh {
         attributes: c_atts.as_ptr(),
-        num_attributes: c_atts.len() as u32,
+        num_attributes: c_num_attributes,
         indices: mesh.indices.as_ptr(),
-        num_vertices: num_vertices as u32,
-        num_faces: (mesh.indices.len() / 3) as u32,
+        num_vertices: c_num_vertices,
+        num_faces: c_num_faces,
     };
     let c_opts = ffi::TfDracoEncodeOptions {
         position_spacing,
@@ -615,6 +684,76 @@ fn validate_grid_domain(positions: &[f32], spacing: f32) -> Result<(), DracoErro
         if !(intervals as f32 * spacing).is_finite() {
             return Err(argument("grid quantization range must be finite"));
         }
+    }
+    Ok(())
+}
+
+/// The largest bit count that the native quantizer accepts.
+const MAX_QUANTIZATION_BITS: i32 = 30;
+
+// The native quantizer computes `floor((value - origin) * (steps / range) + 0.5)`
+// in binary32 and converts the result to a signed 32-bit integer with no range
+// check. This repeats that arithmetic and refuses data for which the result is
+// not a lattice index. `lattice` is the explicit origin and range; without one
+// the native code fits the range to the data, and this function does the same.
+// The caller has checked that the data is finite, that it holds `components`
+// floats per vertex, and that `bits` is 1 to 30.
+fn validate_quantization_domain(
+    att: &Attribute<'_>,
+    bits: i32,
+    lattice: Option<(&[f32], f32)>,
+) -> Result<(), DracoError> {
+    let range = match lattice {
+        Some((origin, range)) => {
+            for value in att.data.chunks_exact(att.components) {
+                for (&v, &o) in value.iter().zip(origin) {
+                    let offset = v - o;
+                    if !(0.0..=range).contains(&offset) {
+                        return Err(argument(&format!(
+                            "attribute {:?} value {v} is outside its explicit \
+                             quantization range of {range} from {o}",
+                            att.kind
+                        )));
+                    }
+                }
+            }
+            range
+        }
+        None => {
+            let mut min = [f32::INFINITY; 4];
+            let mut max = [f32::NEG_INFINITY; 4];
+            for value in att.data.chunks_exact(att.components) {
+                for (c, &v) in value.iter().enumerate() {
+                    min[c] = min[c].min(v);
+                    max[c] = max[c].max(v);
+                }
+            }
+            let mut range = 0.0f32;
+            for c in 0..att.components {
+                let span = max[c] - min[c];
+                if !span.is_finite() {
+                    return Err(argument(&format!(
+                        "attribute {:?} values span more than the largest \
+                         finite float, so their quantization range is not finite",
+                        att.kind
+                    )));
+                }
+                range = range.max(span);
+            }
+            // Equal values have no span. The native code then uses a unit range.
+            if range == 0.0 { 1.0 } else { range }
+        }
+    };
+    // Every offset is now between zero and the range, so its index is at most
+    // the step count, give or take the binary32 rounding of the product. The
+    // index is finite when the steps per unit are.
+    let steps = ((1u32 << bits) - 1) as f32;
+    if !(steps / range).is_finite() {
+        return Err(argument(&format!(
+            "attribute {:?} has a quantization range of {range}, which is too \
+             small for {bits} bits",
+            att.kind
+        )));
     }
     Ok(())
 }
@@ -999,10 +1138,20 @@ mod tests {
 
     #[test]
     fn power_of_two_at_most_rounds_down() {
-        assert_eq!(power_of_two_at_most(0.003318049), 0.001953125);
-        assert_eq!(power_of_two_at_most(0.00390625), 0.00390625);
-        assert_eq!(power_of_two_at_most(3.0), 2.0);
-        assert!(is_power_of_two(power_of_two_at_most(0.1)));
+        assert_eq!(power_of_two_at_most(0.003318049), Ok(0.001953125));
+        assert_eq!(power_of_two_at_most(0.00390625), Ok(0.00390625));
+        assert_eq!(power_of_two_at_most(3.0), Ok(2.0));
+        assert_eq!(power_of_two_at_most(f32::MAX), Ok(2.0f32.powi(127)));
+        assert!(is_power_of_two(power_of_two_at_most(0.1).unwrap()));
+    }
+
+    #[test]
+    fn power_of_two_at_most_refuses_a_target_without_a_power_of_two() {
+        for target in [0.0, -0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let error = power_of_two_at_most(target).unwrap_err();
+            assert_eq!(error.code, 1, "{target}");
+            assert!(error.message.contains("finite and positive"), "{error}");
+        }
     }
 
     #[test]
