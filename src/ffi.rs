@@ -8,6 +8,9 @@
 use std::os::raw::c_char;
 
 pub const TF_DRACO_OK: i32 = 0;
+pub const TF_DRACO_ERR_DECODE: i32 = 3;
+pub const TF_DRACO_ERR_UNSUPPORTED: i32 = 4;
+pub const TF_DRACO_ERR_INTERNAL: i32 = 5;
 
 /// Mirrors `draco::GeometryAttribute::Type`.
 pub const TF_DRACO_ATTR_POSITION: i32 = 0;

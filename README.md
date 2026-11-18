@@ -5,11 +5,11 @@ Contents (`L<n>` is the line number, for a Read offset or `sed -n`):
 
 - L18 Why this crate is shared
 - L34 What it gives you
-- L67 Build requirements
-- L89 Testing
-- L100 How the callers depend on it
-- L117 Documentation
-- L121 History
+- L69 Build requirements
+- L91 Testing
+- L102 How the callers depend on it
+- L119 Documentation
+- L123 History
 <!-- doc-index:end -->
 
 A Rust entry point onto Google's C++ Draco. It exists so that two TileForge
@@ -59,6 +59,8 @@ A caller that encodes data from an upload must be ready for this error. It can k
 
 Read the crate documentation in `src/lib.rs` for the two rules that the
 measurement produced. Both are load bearing.
+
+`decode` does not bound its output. A bitstream declares its own vertex and face counts, and Draco sizes its buffers from them. A caller that decodes data from an upload must bound the expansion before it calls `decode`. `tileforge-mesh` does this in its Draco guard. The accessors of the decoded mesh make three checks. `indices` returns an error when a face index names no point of the mesh. `read_f32` and `read_u32` refuse an attribute with more than four components before they size a buffer. All three return an error when the memory for the result is not available.
 
 Lossless positions retain the source coordinates while Draco compresses mesh topology and attributes. Draco can reorder vertices, split vertices, and reorder faces. Callers must compare oriented triangle values when they need to verify geometry preservation. Unquantized attributes retain their finite values; other attributes keep their requested quantization. Signed zero can normalize to positive zero.
 
