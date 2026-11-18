@@ -36,19 +36,21 @@ record documents the 0.2.1 open-item fixes. All validation ran on build host .21
 
 ## Open items
 
-- The submodule pin 673ee67 is on the fork branch `fix/rans-bit-encoder-destructor`, which exists only in a local clone. Push that branch to `Construkted-Reality/draco` before a consumer moves its pin. See [reviews/2026-10-05-open-items.md](reviews/2026-10-05-open-items.md).
+- The TFGD dumps of the corpus gate on the build host are a rebuild from decoded tiles, not the original dumps. See the "Testing" section of the [README](../README.md).
 - The allocation probe covers four small meshes. It does not prove recovery from memory exhaustion for every input.
 - Sanitizer runs instrument the C++ code only. Stable Rust cannot instrument the Rust code.
 - The corpus gate checks positions and texture coordinates. The TFGD dumps hold no normals or colors, so the gate does not check them. Renderer fidelity is out of scope.
 
 ## Raw evidence
 
-Raw logs stay outside Git on build host .212. These directories existed on 2026-10-05:
+Raw logs stayed outside Git on build host .212. These directories existed on 2026-10-05:
 
 - `/mnt/data2/draco/review-fixes-20260906/evidence/` (the four 2026-09 records).
 - `/mnt/data2/release-fixes-20261001/evidence/` (the lossless record; shared with other repositories).
 - `/mnt/data2/draco/open-items-20261005/evidence/` (the 2026-10-05 record).
 - `/mnt/data2/gridcorpus/dump/` (932 TFGD corpus files).
+
+On 2026-11-17, none of these directories was on the build host. The corpus directory was rebuilt on that date from decoded tiles; see the "Testing" section of the [README](../README.md). The raw logs of the records are not on the build host.
 
 ## Consumer pins
 

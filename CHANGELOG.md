@@ -10,10 +10,15 @@ Encoded output does not change for any input that `encode` still accepts. The "C
 - `encode` refuses a value outside the explicit cube of a quantized attribute, a bit count outside 0 to 30, and a speed outside 0 to 10, with argument error code 1. Before this change the native codec accepted these inputs without a documented result.
 
 ### Added
+- `LICENSE` holds the MIT License of this repository. `NOTICE` names the licences of the Draco source and of its dependencies, which the build compiles from the submodule.
+- The README lists the evidence that a pin move needs, and names the procedure for changes from `google/draco`.
+- The README states that the corpus dumps on the build host are a rebuild from decoded tiles, and that the repository has no continuous integration. The document map states that the raw evidence directories of the earlier records are not on the build host.
 - The README states that a caller must bound the output of `decode` for data from an upload.
 
 ### Fixed
 - `decode` returns an error for a bitstream whose sizes, face indices, or entropy coder offset are not consistent. The Draco submodule moves to the fork branch `sync/upstream-decoder-checks`, which adds four upstream commits (dd4ec6c, 0bc8abd, 807217a, 21bace6) with input validation for the decoder.
+- The README and the 0.2.1 entry below agree on the allocation probe: it sweeps an encode and a decode in four configurations, and three single-failure attempts complete with identical output.
+- The documents no longer state that the fork branch of the 0.2.1 pin exists only in a local clone. The branch is on the fork remote.
 - `DecodedMesh::indices` returns decode error code 3 when a face index names no point of the decoded mesh.
 - `DecodedMesh::indices`, `read_f32`, and `read_u32` return internal error code 5 when the memory for the result is not available. `read_f32` and `read_u32` refuse more than four components before they size a buffer.
 - `encode` refuses a quantized attribute, and positions under `Quantization::Bits`, when the fitted range is not finite or the number of steps per unit is not finite. Before this change the native codec received such data and stopped the process or produced unusable output.
@@ -29,7 +34,7 @@ Encoded output does not change. 4,650 of 4,650 corpus encodes are byte-identical
 - The source comment in `csrc/tileforge_draco.cc` names the tileforge-mesh repository of the record that it cites.
 
 ### Added
-- The allocation probe sweeps single and persistent allocation failure in four encode configurations. Each attempt runs in a child process.
+- The allocation probe sweeps single and persistent allocation failure over one encode and one decode in four configurations. Each attempt runs in a child process.
 - `tests/native_grid_domain.cc` sends grid encodes at the edges of the native arithmetic domain to Draco for sanitizer runs.
 - The grid-domain tests cover the widest grids that the guard accepts and two more refused grids.
 - The corpus gate checks texture coordinates at 10 to 16 bits against one quantization step.

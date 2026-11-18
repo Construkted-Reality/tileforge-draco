@@ -1,0 +1,40 @@
+tileforge-draco
+Copyright (c) 2026 Construkted Reality
+
+The Rust and C++ source of this repository (`src/`, `csrc/`, `build.rs`,
+`tests/`, `examples/`) is under the MIT License. See LICENSE.
+
+The build compiles third-party source and links it into the crate. That source
+is not in this repository. It arrives through the git submodule
+`third_party/draco` and the submodules inside it. Each component keeps its own
+licence, and the MIT License of this repository does not replace it.
+
+1. Draco
+   Copyright Google Inc. and other contributors (third_party/draco/AUTHORS).
+   Apache License, Version 2.0: third_party/draco/LICENSE.
+   The submodule is the fork Construkted-Reality/draco, which changes some
+   Draco files. third_party/draco/CONSTRUKTED-CHANGES.md lists the changes.
+
+2. Eigen 3.4.0 (headers, used by Draco)
+   Mozilla Public License, Version 2.0, for most files:
+   third_party/draco/third_party/eigen/COPYING.MPL2.
+   third_party/draco/third_party/eigen/COPYING.README states that some files
+   contain code under BSD or LGPL licences. The other COPYING files in that
+   directory hold the licence texts.
+
+3. tinygltf (headers, used by Draco)
+   MIT License: third_party/draco/third_party/tinygltf/LICENSE.
+   tinygltf includes json.hpp (MIT License), stb_image.h, and
+   stb_image_write.h (public domain or MIT License). Each file states its
+   licence in the file.
+
+4. gulrak/filesystem (headers, used by Draco)
+   MIT License: third_party/draco/third_party/filesystem/LICENSE.
+
+5. googletest
+   BSD 3-Clause License:
+   third_party/draco/third_party/googletest/LICENSE.
+   Only the Draco unit tests use it. This crate does not build it or link it.
+
+A distribution of a binary that contains this crate must carry the notices
+that these licences require.
