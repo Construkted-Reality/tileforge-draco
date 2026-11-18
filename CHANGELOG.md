@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+Encoded output does not change for any input that encoded correctly before. The record is in pull request 9.
+
+### Changed
+- `power_of_two_at_most` returns `Result<f32, DracoError>`. A target that is not finite and positive returns argument error code 1 instead of a panic. Callers must handle the result.
+- `encode` refuses a value outside the explicit cube of a quantized attribute, a bit count outside 0 to 30, and a speed outside 0 to 10, with argument error code 1. Before this change the native codec accepted these inputs without a documented result.
+
+### Fixed
+- `encode` refuses a quantized attribute, and positions under `Quantization::Bits`, when the fitted range is not finite or the number of steps per unit is not finite. Before this change the native codec received such data and stopped the process or produced unusable output.
+- `encode` checks the vertex, triangle, and attribute counts against the native 32-bit fields.
+
 ## [0.2.1] - 2026-10-05
 
 Encoded output does not change. 4,650 of 4,650 corpus encodes are byte-identical to 0.2.0. The record is `docs/reviews/2026-10-05-open-items.md`.
