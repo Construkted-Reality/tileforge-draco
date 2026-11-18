@@ -110,17 +110,24 @@ pub fn is_power_of_two(v: f32) -> bool {
 ///
 /// Use it to turn a step derived from the data into one that decodes exactly.
 /// It rounds down, never up, so the result is never coarser than asked.
-pub fn power_of_two_at_most(target: f32) -> f32 {
-    assert!(
-        target.is_finite() && target > 0.0,
-        "target must be positive"
-    );
+///
+/// # Errors
+///
+/// Returns code 1 when `target` is not finite or not positive. No power of two
+/// is at most zero, and a caller that derives the step from its data can
+/// arrive at such a target.
+pub fn power_of_two_at_most(target: f32) -> Result<f32, DracoError> {
+    if !target.is_finite() || target <= 0.0 {
+        return Err(argument(&format!(
+            "a power-of-two target must be finite and positive, not {target}"
+        )));
+    }
     let bits = target.to_bits();
-    if target.is_normal() {
+    Ok(if target.is_normal() {
         f32::from_bits(bits & 0x7f80_0000)
     } else {
         f32::from_bits(1 << (31 - bits.leading_zeros()))
-    }
+    })
 }
 
 /// Rounds every position onto the global grid of `spacing`.
@@ -999,10 +1006,20 @@ mod tests {
 
     #[test]
     fn power_of_two_at_most_rounds_down() {
-        assert_eq!(power_of_two_at_most(0.003318049), 0.001953125);
-        assert_eq!(power_of_two_at_most(0.00390625), 0.00390625);
-        assert_eq!(power_of_two_at_most(3.0), 2.0);
-        assert!(is_power_of_two(power_of_two_at_most(0.1)));
+        assert_eq!(power_of_two_at_most(0.003318049), Ok(0.001953125));
+        assert_eq!(power_of_two_at_most(0.00390625), Ok(0.00390625));
+        assert_eq!(power_of_two_at_most(3.0), Ok(2.0));
+        assert_eq!(power_of_two_at_most(f32::MAX), Ok(2.0f32.powi(127)));
+        assert!(is_power_of_two(power_of_two_at_most(0.1).unwrap()));
+    }
+
+    #[test]
+    fn power_of_two_at_most_refuses_a_target_without_a_power_of_two() {
+        for target in [0.0, -0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let error = power_of_two_at_most(target).unwrap_err();
+            assert_eq!(error.code, 1, "{target}");
+            assert!(error.message.contains("finite and positive"), "{error}");
+        }
     }
 
     #[test]
